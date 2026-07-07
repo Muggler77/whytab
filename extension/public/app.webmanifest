@@ -1,0 +1,25 @@
+{
+  "name": "whytab",
+  "short_name": "whytab",
+  "description": "可跨设备同步的快捷导航、小组件与效率主页",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0c111d",
+  "theme_color": "#0c111d",
+  "icons": [
+    {
+      "src": "./icons/icon128.svg",
+      "sizes": "128x128",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "./icons/icon128.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

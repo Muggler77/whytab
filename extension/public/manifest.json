@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "whytab",
+  "description": "A local-first new tab dashboard for shortcuts, widgets, notes, todos, weather, and optional sync.",
+  "version": "0.1.0",
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "geolocation"
+  ],
+  "host_permissions": [
+    "https://api.open-meteo.com/*",
+    "https://geocoding-api.open-meteo.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+}

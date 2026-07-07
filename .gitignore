@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+*.log
+网页数据/
+extension/public/wetab-recovery.json
