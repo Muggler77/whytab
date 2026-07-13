@@ -13,6 +13,72 @@ It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app
 - Import and backup: supports JSON, browser bookmarks HTML, CSV, and Wetab migration input.
 - Private by default on each device: the app remains usable offline and does not require sign-in for local use.
 
+## Download and Use
+
+### Use the hosted web app
+
+Open the public web app:
+
+```text
+https://muggler77.github.io/whytab/
+```
+
+This is the easiest way to try whytab on iPhone, iPad, Android, tablets, and desktop browsers.
+
+- iPhone / iPad: open the link in Safari, tap Share, then choose "Add to Home Screen".
+- Android: open the link in Chrome or another modern browser, then choose "Install app" or "Add to Home screen".
+- Desktop: open the link in Chrome, Edge, Safari, Firefox, or another modern browser.
+
+The web app does not replace the browser's new tab page, but it provides the same dashboard, widgets, local storage, backup, and optional account sync.
+
+### Install as a Chrome or Edge new tab extension
+
+The extension version replaces the browser's new tab page on desktop Chromium browsers.
+
+For security, this repository does not commit a prebuilt `extension/dist` folder with production sync configuration. To install from GitHub source:
+
+1. Download the repository ZIP from GitHub, or clone the repository.
+2. Open a terminal in the project folder.
+3. Run:
+
+```bash
+npm install
+npm run build
+```
+
+4. Open `chrome://extensions/` in Chrome, or `edge://extensions/` in Edge.
+5. Enable Developer mode.
+6. Click "Load unpacked".
+7. Select the generated `extension/dist` folder.
+8. Open a new tab.
+
+After installation, whytab stores your shortcuts, widgets, notes, todos, settings, and layout locally in the current browser profile.
+
+### Register, sign in, and sync
+
+Sign-in is optional.
+
+- You can use whytab without an account. Your data stays in the current browser profile.
+- To sync across devices, open the account/sync panel and register with email and password.
+- Use the same account on another device to sync shortcuts, widgets, notes, todos, countdowns, settings, and layout.
+- Public users do not need to enter a service address, API key, access key, or advanced connection setting.
+- Keep a JSON export backup when moving browsers or resetting a device.
+
+## 中文快速使用
+
+在线版地址：
+
+```text
+https://muggler77.github.io/whytab/
+```
+
+- 手机和平板：打开上面的地址，添加到主屏幕即可使用。
+- Mac / Windows 桌面浏览器：可以直接打开在线版，也可以从源码构建后作为 Chrome / Edge 新标签页插件加载。
+- 插件安装方式：下载 GitHub 源码，运行 `npm install` 和 `npm run build`，然后在浏览器扩展管理页选择“加载已解压的扩展程序”，加载 `extension/dist`。
+- 不登录也可以用：数据默认保存在本机浏览器 IndexedDB。
+- 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
+- 普通用户不需要填写“服务地址”“访问密钥”或任何高级连接配置。
+
 ## Supported Platforms
 
 ### Desktop
