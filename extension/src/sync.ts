@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "./projectConfig";
 import { defaultWidgetSizes } from "./defaultState";
 import type { AppState, Countdown, Note, Shortcut, ShortcutFolder, ShortcutGroup, Todo, WidgetKey } from "./types";
@@ -48,7 +48,7 @@ export async function signUp(url: string, anonKey: string, email: string, passwo
   if (!supabase) throw new Error("Supabase 配置不完整");
   const result = await supabase.auth.signUp({ email, password });
   if (result.error) throw result.error;
-  return result.data.user;
+  return result.data as { user: User | null; session: Session | null };
 }
 
 export async function signOut(url?: string, anonKey?: string) {

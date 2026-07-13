@@ -80,6 +80,7 @@ type WidgetMenuState = { x: number; y: number; widgetKey?: WidgetKey } | null;
 type HomePage = "widgets" | "shortcuts" | "tools";
 type HomeTileRef = `shortcut:${string}` | `folder:${string}`;
 type SyncMode = "merge" | "push" | "pull";
+type AuthResult = { status: "signed-in" | "verification-sent"; message: string };
 
 const SYNC_RESTORE_KEY = "sync-restore-point";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
@@ -1568,10 +1569,24 @@ export default function App() {
           onLogin={async (mode, email, password) => {
             const { supabaseUrl, supabaseAnonKey } = state.settings;
             if (!supabaseUrl || !supabaseAnonKey) throw new Error("同步服务暂未配置，请稍后再试");
-            if (mode === "login") await signIn(supabaseUrl, supabaseAnonKey, email, password);
-            else await signUp(supabaseUrl, supabaseAnonKey, email, password);
+            if (mode === "login") {
+              await signIn(supabaseUrl, supabaseAnonKey, email, password);
+              await refreshUser();
+              await performAutoSync("登录后自动同步");
+              return { status: "signed-in", message: "登录成功，正在同步数据。" };
+            }
+
+            const result = await signUp(supabaseUrl, supabaseAnonKey, email, password);
+            if (!result.session) {
+              await refreshUser();
+              const message = "注册申请已提交。请打开邮箱完成验证，验证后再回来登录同步。";
+              setSync((old) => ({ ...old, user: null, syncing: false, message: "等待邮箱验证" }));
+              return { status: "verification-sent", message };
+            }
+
             await refreshUser();
             await performAutoSync("登录后自动同步");
+            return { status: "signed-in", message: "注册成功，已登录并开始同步。" };
           }}
           onSignOut={async () => {
             await signOut(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
@@ -3127,7 +3142,7 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
   sync: SyncStatus;
   updateState: (updater: (state: AppState) => AppState) => void;
   onClose: () => void;
-  onLogin: (mode: "login" | "signup", email: string, password: string) => Promise<void>;
+  onLogin: (mode: "login" | "signup", email: string, password: string) => Promise<AuthResult>;
   onSignOut: () => Promise<void>;
   onSync: (mode: SyncMode) => Promise<void>;
   restoreAvailable: boolean;
@@ -3138,13 +3153,20 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const submit = async (mode: "login" | "signup") => {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      await onLogin(mode, email, password);
+      const result = await onLogin(mode, email, password);
+      setNotice(result.message);
+      if (result.status === "verification-sent") {
+        setAuthMode("login");
+        setPassword("");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登录失败");
+      setError(err instanceof Error ? err.message : mode === "signup" ? "注册失败" : "登录失败");
     } finally {
       setBusy(false);
     }
@@ -3222,8 +3244,8 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
       {!sync.user && (
         <div className="sync-auth-panel">
           <div className="sync-auth-tabs" role="tablist" aria-label="账号操作">
-            <button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setError(""); }}>登录</button>
-            <button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setError(""); }}>注册</button>
+            <button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setError(""); setNotice(""); }}>登录</button>
+            <button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setError(""); setNotice(""); }}>注册</button>
           </div>
           <label className="sync-field">
             <span>邮箱</span>
@@ -3253,6 +3275,7 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
             </div>
           </label>
           <p className="sync-auth-note">{authMode === "login" ? "使用同一个账号登录其他设备，即可合并同步你的 whytab 数据。" : "注册后会使用当前邮箱作为同步账号，之后可直接在其他设备登录。"}</p>
+          {notice && <p className="sync-auth-success">{notice}</p>}
           {error && <p className="warning">{error}</p>}
           <button className="primary sync-submit" disabled={busy || !email || !password} onClick={() => submit(authMode)}>
             {busy ? "处理中" : authMode === "login" ? "登录并同步" : "注册并同步"}
