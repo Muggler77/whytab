@@ -60,31 +60,13 @@ Recommended sender settings:
 
 Hosted Supabase projects require Custom SMTP before the dashboard allows editing email subjects and bodies. Without Custom SMTP, Supabase sends authentication email using its default templates.
 
-Recommended confirmation email template:
+Recommended confirmation email subject:
 
-Subject:
-
-```text
+```txt
 确认你的 whytab 同步账号
 ```
 
-Body:
-
-```html
-<p>你好，</p>
-
-<p>你刚刚使用这个邮箱注册了 whytab 同步账号。</p>
-
-<p>whytab 是一个本地优先的新标签页工具。你的快捷方式、小组件、笔记、待办和设置会优先保存在当前浏览器本地；登录账号后，才会加密连接到云端用于多设备同步。</p>
-
-<p>请点击下面的按钮完成邮箱验证：</p>
-
-<p><a href="{{ .ConfirmationURL }}">确认邮箱并启用同步</a></p>
-
-<p>如果你没有注册 whytab，可以忽略这封邮件。</p>
-
-<p>whytab</p>
-```
+Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://muggler77.github.io/whytab/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
 
 The template should keep Supabase's `{{ .ConfirmationURL }}` variable unchanged. Supabase replaces it with the real verification link.
 
