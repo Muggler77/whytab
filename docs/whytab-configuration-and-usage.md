@@ -60,6 +60,8 @@ Recommended sender settings:
 
 Hosted Supabase projects require Custom SMTP before the dashboard allows editing email subjects and bodies. Without Custom SMTP, Supabase sends authentication email using its default templates.
 
+For public signup, do not rely on the default Supabase sender. Use Custom SMTP, or deploy the Send Email Hook documented in `docs/auth-email-delivery.md`.
+
 Recommended confirmation email subject:
 
 ```txt
