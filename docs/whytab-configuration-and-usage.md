@@ -58,6 +58,8 @@ Recommended sender settings:
 - Sender name: `whytab`
 - Sender email: use a verified sender/domain that belongs to the project.
 
+Hosted Supabase projects require Custom SMTP before the dashboard allows editing email subjects and bodies. Without Custom SMTP, Supabase sends authentication email using its default templates.
+
 Recommended confirmation email template:
 
 Subject:
