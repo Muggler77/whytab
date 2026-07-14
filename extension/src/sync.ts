@@ -43,10 +43,14 @@ export async function signIn(url: string, anonKey: string, email: string, passwo
   return result.data.user;
 }
 
-export async function signUp(url: string, anonKey: string, email: string, password: string) {
+export async function signUp(url: string, anonKey: string, email: string, password: string, emailRedirectTo?: string) {
   const supabase = getSupabase(url, anonKey);
   if (!supabase) throw new Error("Supabase 配置不完整");
-  const result = await supabase.auth.signUp({ email, password });
+  const result = await supabase.auth.signUp({
+    email,
+    password,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined
+  });
   if (result.error) throw result.error;
   return result.data as { user: User | null; session: Session | null };
 }

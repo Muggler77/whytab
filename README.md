@@ -256,7 +256,9 @@ The hosted sync backend uses Supabase:
 - Row Level Security to isolate per-user data
 - An Edge Function for cached Bank of China exchange-rate data
 
-Public users do not need to enter service URLs or API keys. The hosted build injects frontend sync configuration during build. If you fork and self-host, configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
+Public users do not need to enter service URLs or API keys. The hosted build injects frontend sync configuration during build. If you fork and self-host, configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
+
+For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. The confirmation email template should clearly say it is from whytab, explain that it verifies a sync account, and keep the `{{ .ConfirmationURL }}` variable intact.
 
 ## Import and Backup
 

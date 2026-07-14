@@ -57,6 +57,7 @@ import { downloadJson, loadState, readKey, saveState, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
 import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText } from "./importers";
 import { fetchRates, getCachedRates } from "./rates";
+import { DEFAULT_AUTH_REDIRECT_URL } from "./projectConfig";
 import { fetchWeather, fetchWeatherByCoordinates, getCachedWeather, getDevicePosition, weatherLabel } from "./weather";
 import {
   getUser,
@@ -83,6 +84,7 @@ type SyncMode = "merge" | "push" | "pull";
 type AuthResult = { status: "signed-in" | "verification-sent"; message: string };
 
 const SYNC_RESTORE_KEY = "sync-restore-point";
+const PUBLIC_AUTH_REDIRECT_URL = "https://muggler77.github.io/whytab/";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
@@ -99,6 +101,14 @@ const shouldRefreshExternalData = (target: AppState, cachedWeather?: WeatherStat
   const ratesConfigured = Boolean(target.settings.supabaseUrl && target.settings.supabaseAnonKey);
   const needsRates = ratesConfigured && (!cachedRates || !isFreshCache(cachedRates.updatedAt, RATES_CACHE_MAX_AGE_MS));
   return needsWeather || needsRates;
+};
+
+const getAuthRedirectUrl = () => {
+  if (DEFAULT_AUTH_REDIRECT_URL) return DEFAULT_AUTH_REDIRECT_URL;
+  if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+    return new URL(".", window.location.href).toString();
+  }
+  return PUBLIC_AUTH_REDIRECT_URL;
 };
 
 const widgetNames: Record<WidgetKey, string> = {
@@ -1576,7 +1586,7 @@ export default function App() {
               return { status: "signed-in", message: "登录成功，正在同步数据。" };
             }
 
-            const result = await signUp(supabaseUrl, supabaseAnonKey, email, password);
+            const result = await signUp(supabaseUrl, supabaseAnonKey, email, password, getAuthRedirectUrl());
             if (!result.session) {
               await refreshUser();
               const message = "注册申请已提交。请打开邮箱完成验证，验证后再回来登录同步。";

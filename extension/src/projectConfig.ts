@@ -2,4 +2,5 @@ const env = import.meta.env;
 
 export const DEFAULT_SUPABASE_URL = env.VITE_SUPABASE_URL || "";
 export const DEFAULT_SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY || "";
+export const DEFAULT_AUTH_REDIRECT_URL = env.VITE_AUTH_REDIRECT_URL || "";
 export const SYNC_SERVICE_CONFIGURED = Boolean(DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_ANON_KEY);

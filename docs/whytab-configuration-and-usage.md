@@ -27,16 +27,64 @@ Frontend sync configuration is injected at build time:
 ```text
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
+VITE_AUTH_REDIRECT_URL
 ```
 
 For local development, create an ignored `.env.local` file from `.env.example`.
 
-For GitHub Pages, configure repository secrets with the same names:
+For GitHub Pages, configure repository secrets for the Supabase values:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+Configure `VITE_AUTH_REDIRECT_URL` as a normal build environment value. It is not a secret.
+
 Do not commit real values to source control.
+
+## Supabase Auth Email Setup
+
+Email verification is controlled in the Supabase project, not in the end-user UI.
+
+Recommended Auth URL settings:
+
+- Site URL: `https://muggler77.github.io/whytab/`
+- Redirect URLs / Additional Redirect URLs: `https://muggler77.github.io/whytab/`
+- Local development redirect URL, if needed: `http://localhost:5173/`
+
+The app passes `emailRedirectTo` during registration. Hosted web builds redirect back to the current web app URL. Extension builds redirect to the public web app so the verification link can complete in a normal browser page.
+
+Recommended sender settings:
+
+- Sender name: `whytab`
+- Sender email: use a verified sender/domain that belongs to the project.
+
+Recommended confirmation email template:
+
+Subject:
+
+```text
+确认你的 whytab 同步账号
+```
+
+Body:
+
+```html
+<p>你好，</p>
+
+<p>你刚刚使用这个邮箱注册了 whytab 同步账号。</p>
+
+<p>whytab 是一个本地优先的新标签页工具。你的快捷方式、小组件、笔记、待办和设置会优先保存在当前浏览器本地；登录账号后，才会加密连接到云端用于多设备同步。</p>
+
+<p>请点击下面的按钮完成邮箱验证：</p>
+
+<p><a href="{{ .ConfirmationURL }}">确认邮箱并启用同步</a></p>
+
+<p>如果你没有注册 whytab，可以忽略这封邮件。</p>
+
+<p>whytab</p>
+```
+
+The template should keep Supabase's `{{ .ConfirmationURL }}` variable unchanged. Supabase replaces it with the real verification link.
 
 ## Secret Handling Rules
 
