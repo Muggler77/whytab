@@ -1595,6 +1595,24 @@ small,
   border-color: rgba(255, 255, 255, 0.24);
 }
 
+@media (min-width: 901px) {
+  .hero-search {
+    transform: translateX(-32px);
+  }
+}
+
+@media (min-width: 1481px) and (max-width: 1608px) {
+  .hero-search {
+    transform: translateX(calc(708px - 50vw));
+  }
+}
+
+@media (min-width: 1609px) {
+  .hero-search {
+    transform: translateX(-96px);
+  }
+}
+
 .workspace,
 .workspace.page-widgets,
 .workspace.page-shortcuts {
