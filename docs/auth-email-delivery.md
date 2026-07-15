@@ -16,7 +16,7 @@ For the public whytab launch, use:
 - Sender target: `whytab <no-reply@whytab.is-a.dev>`
 - Supabase integration: Send Email Hook
 
-Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. The `whytab.is-a.dev` subdomain is requested through is-a.dev pull request #43714. The automated test has passed, but the domain should be treated as pending until the pull request is merged and DNS is published.
+Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. The `whytab.is-a.dev` subdomain is requested through is-a.dev pull request #43714. The pull request now includes the Resend DKIM, return-path/SPF, and DMARC records, and the automated test has passed. The domain should still be treated as pending until the pull request is merged and DNS is published.
 
 If `whytab.is-a.dev` is not approved quickly enough, buy a normal domain and keep the same Resend + Supabase Hook setup. A paid domain is usually more reliable for public product email deliverability.
 
