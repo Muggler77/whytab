@@ -1,4 +1,5 @@
 import { defaultState } from "./defaultState";
+import { MIGRATION_BACKUP_KEY, migrateState } from "./migrations";
 import type { AppState } from "./types";
 
 const DB_NAME = "whytab";
@@ -46,7 +47,10 @@ export async function writeKey<T>(key: string, value: T): Promise<void> {
 
 export async function loadState(): Promise<AppState> {
   const stored = await readKey<AppState>(STATE_KEY);
-  if (stored?.version === 1) return stored;
+  const migration = migrateState(stored);
+  if (migration.backup) await writeKey(MIGRATION_BACKUP_KEY, migration.backup);
+  if (stored && migration.migrated) await saveState(migration.state);
+  if (stored?.version === 1) return migration.state;
   const initial = defaultState();
   await saveState(initial);
   return initial;

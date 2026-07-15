@@ -114,6 +114,9 @@ export type SyncMeta = {
 
 export type AppState = {
   version: 1;
+  dataSchemaVersion?: number;
+  clientVersion?: string;
+  minimumClientVersion?: string;
   shortcuts: Shortcut[];
   shortcutFolders: ShortcutFolder[];
   shortcutGroups: ShortcutGroup[];

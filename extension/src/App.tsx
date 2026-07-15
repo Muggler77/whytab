@@ -59,6 +59,8 @@ import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, favicon
 import { fetchRates, getCachedRates } from "./rates";
 import { DEFAULT_AUTH_REDIRECT_URL } from "./projectConfig";
 import { fetchWeather, fetchWeatherByCoordinates, getCachedWeather, getDevicePosition, weatherLabel } from "./weather";
+import { checkForUpdate, type UpdateCheckResult } from "./updates";
+import { APP_VERSION, DATA_SCHEMA_VERSION, UPDATE_TARGET_URL } from "./version";
 import {
   getUser,
   markPulled,
@@ -400,6 +402,7 @@ export default function App() {
   const [ratesRefreshing, setRatesRefreshing] = useState(false);
   const [weatherRefreshing, setWeatherRefreshing] = useState(false);
   const [sync, setSync] = useState<SyncStatus>({ message: "未登录", syncing: false });
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult>({ status: "idle" });
   const [toast, setToast] = useState("");
   const [undoLabel, setUndoLabel] = useState("");
   const [restoreAvailable, setRestoreAvailable] = useState(false);
@@ -536,6 +539,26 @@ export default function App() {
     await Promise.allSettled([weatherTask, ratesTask]);
     if (feedback) showToast("天气和汇率已刷新");
   };
+
+  const runUpdateCheck = useCallback(async (feedback = false) => {
+    setUpdateCheck((old) => ({ status: "checking", checkedAt: old.checkedAt }));
+    const result = await checkForUpdate();
+    setUpdateCheck(result);
+    if (feedback) {
+      if (result.status === "available") showToast(result.critical ? "发现重要更新，请尽快升级" : "发现新版本");
+      if (result.status === "current") showToast("当前已是最新版本");
+      if (result.status === "unsupported") showToast("当前版本过旧，请先升级");
+      if (result.status === "error") showToast(result.message);
+    } else if (result.status === "available" && result.critical) {
+      showToast("发现重要更新，请尽快升级");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(() => void runUpdateCheck(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [ready, runUpdateCheck]);
 
   const groups = useMemo(() => {
     return state.shortcutGroups.filter((group) => !group.deletedAt).sort((a, b) => a.order - b.order);
@@ -1561,9 +1584,11 @@ export default function App() {
       {dialog === "settings" && (
         <SettingsDialog
           state={state}
+          updateCheck={updateCheck}
           updateState={updateState}
           onImport={() => setDialog("import")}
           onExport={exportData}
+          onCheckUpdate={() => runUpdateCheck(true)}
           onClose={() => {
             setDialog(null);
             void refreshExternalData(state, true);
@@ -3076,17 +3101,33 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
   );
 }
 
-function SettingsDialog({ state, updateState, onImport, onExport, onClose }: {
+function SettingsDialog({ state, updateCheck, updateState, onImport, onExport, onCheckUpdate, onClose }: {
   state: AppState;
+  updateCheck: UpdateCheckResult;
   updateState: (updater: (state: AppState) => AppState) => void;
   onImport: () => void;
   onExport: () => void;
+  onCheckUpdate: () => void;
   onClose: () => void;
 }) {
   const settings = state.settings;
   const setSetting = <K extends keyof AppState["settings"]>(key: K, value: AppState["settings"][K]) => {
     updateState((current) => ({ ...current, settings: { ...current.settings, [key]: value, updatedAt: nowIso() } }));
   };
+  const updateMessage = updateCheck.status === "checking"
+    ? "正在检查更新..."
+    : updateCheck.status === "available"
+      ? `发现新版本 ${updateCheck.manifest.latestVersion}`
+      : updateCheck.status === "unsupported"
+        ? `当前版本低于最低支持版本 ${updateCheck.manifest.minimumSupportedVersion}`
+        : updateCheck.status === "current"
+          ? "当前已是最新版本"
+          : updateCheck.status === "error"
+            ? updateCheck.message
+            : "可手动检查是否有新版";
+  const updateTarget = updateCheck.status === "available" || updateCheck.status === "unsupported"
+    ? updateCheck.manifest.updateUrl || updateCheck.manifest.releaseNotesUrl || UPDATE_TARGET_URL
+    : UPDATE_TARGET_URL;
   return (
     <DialogShell title="外观设置" onClose={onClose}>
       <label>主题<select value={settings.theme} onChange={(event) => setSetting("theme", event.target.value as "light" | "dark")}><option value="dark">深色</option><option value="light">浅色</option></select></label>
@@ -3114,6 +3155,27 @@ function SettingsDialog({ state, updateState, onImport, onExport, onClose }: {
         <div className="button-row split-row">
           <button type="button" onClick={onImport}><Import size={16} /> 导入数据</button>
           <button type="button" onClick={onExport}><Download size={16} /> 导出备份</button>
+        </div>
+      </div>
+      <div className="settings-block version-settings">
+        <div className="section-title compact-title">
+          <div>
+            <h3>版本</h3>
+            <p>更新检查和数据兼容</p>
+          </div>
+        </div>
+        <div className="version-row">
+          <span>当前版本</span>
+          <strong>{APP_VERSION}</strong>
+        </div>
+        <div className="version-row">
+          <span>数据版本</span>
+          <strong>{state.dataSchemaVersion || DATA_SCHEMA_VERSION}</strong>
+        </div>
+        <p className={`version-status ${updateCheck.status}`}>{updateMessage}</p>
+        <div className="button-row split-row">
+          <button type="button" disabled={updateCheck.status === "checking"} onClick={onCheckUpdate}><RefreshCcw size={16} /> 检查更新</button>
+          <button type="button" onClick={() => window.open(updateTarget, "_blank", "noopener,noreferrer")}><Globe2 size={16} /> 发布页面</button>
         </div>
       </div>
       <button className="primary" onClick={onClose}><Palette size={16} /> 完成</button>

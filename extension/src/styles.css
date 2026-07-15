@@ -7179,6 +7179,50 @@ small,
   border-radius: 8px;
 }
 
+.version-settings {
+  gap: 12px;
+}
+
+.version-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+}
+
+.version-row span,
+.version-status {
+  color: rgba(255,255,255,0.62);
+  font-size: 13px;
+}
+
+.version-row strong {
+  color: rgba(255,255,255,0.9);
+  font-size: 13px;
+}
+
+.version-status {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.version-status.available,
+.version-status.unsupported {
+  color: #facc15;
+}
+
+.version-status.current {
+  color: #5eead4;
+}
+
+.version-status.error {
+  color: #fca5a5;
+}
+
 .home-widgets .widget-clock { --tone: 190 82% 62%; }
 .home-widgets .widget-memo { --tone: 50 92% 66%; }
 .home-widgets .widget-year { --tone: 150 70% 58%; }

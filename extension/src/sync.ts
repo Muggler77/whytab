@@ -2,6 +2,8 @@ import { createClient, type Session, type SupabaseClient, type User } from "@sup
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "./projectConfig";
 import { defaultWidgetSizes } from "./defaultState";
 import type { AppState, Countdown, Note, Shortcut, ShortcutFolder, ShortcutGroup, Todo, WidgetKey } from "./types";
+import { compareVersions } from "./updates";
+import { APP_VERSION, DATA_SCHEMA_VERSION, MIN_SUPPORTED_APP_VERSION } from "./version";
 
 export type SyncStatus = {
   user?: User | null;
@@ -70,7 +72,7 @@ export async function pushSnapshot(state: AppState) {
     {
       user_id: userData.user.id,
       name: "primary",
-      payload: state,
+      payload: normalizeState(state),
       updated_at: state.updatedAt
     },
     { onConflict: "user_id,name" }
@@ -91,7 +93,9 @@ export async function pullSnapshot(state: AppState): Promise<AppState | undefine
     .eq("name", "primary")
     .maybeSingle();
   if (error) throw error;
-  return data?.payload as AppState | undefined;
+  const payload = data?.payload as AppState | undefined;
+  if (payload) ensureRemoteCompatible(payload);
+  return payload;
 }
 
 type SyncRecord = {
@@ -140,6 +144,17 @@ const normalizeWidgetOrder = (order?: WidgetKey[]) => {
 };
 
 const time = (value?: string) => (value ? new Date(value).getTime() || 0 : 0);
+
+const schemaVersion = (state?: Partial<AppState>) => state?.dataSchemaVersion || state?.version || 1;
+
+function ensureRemoteCompatible(remote: AppState) {
+  if (schemaVersion(remote) > DATA_SCHEMA_VERSION) {
+    throw new Error("云端数据来自更新版本，请先升级 whytab 再同步");
+  }
+  if (remote.minimumClientVersion && compareVersions(APP_VERSION, remote.minimumClientVersion) < 0) {
+    throw new Error("当前版本过旧，请先升级 whytab 再同步");
+  }
+}
 
 const newer = <T extends { updatedAt?: string }>(left: T, right: T) => {
   return time(left.updatedAt) >= time(right.updatedAt) ? left : right;
@@ -199,6 +214,9 @@ export function normalizeState(state: AppState): AppState {
   return {
     ...state,
     version: 1,
+    dataSchemaVersion: DATA_SCHEMA_VERSION,
+    clientVersion: APP_VERSION,
+    minimumClientVersion: MIN_SUPPORTED_APP_VERSION,
     updatedAt,
     shortcuts: stripStarterShortcuts(state.shortcuts || []),
     shortcutFolders: state.shortcutFolders || [],
@@ -245,10 +263,14 @@ export function mergeRemote(local: AppState, remote?: AppState): AppState {
   const normalizedLocal = normalizeState(local);
   if (!remote) return normalizedLocal;
 
+  ensureRemoteCompatible(remote);
   const normalizedRemote = normalizeState(remote);
   const settings = newer(normalizedLocal.settings, normalizedRemote.settings);
   const merged: AppState = {
     version: 1,
+    dataSchemaVersion: DATA_SCHEMA_VERSION,
+    clientVersion: APP_VERSION,
+    minimumClientVersion: MIN_SUPPORTED_APP_VERSION,
     shortcutGroups: mergeRecords<ShortcutGroup>(normalizedLocal.shortcutGroups, normalizedRemote.shortcutGroups),
     shortcutFolders: mergeRecords<ShortcutFolder>(normalizedLocal.shortcutFolders, normalizedRemote.shortcutFolders),
     shortcuts: mergeRecords<Shortcut>(normalizedLocal.shortcuts, normalizedRemote.shortcuts),
