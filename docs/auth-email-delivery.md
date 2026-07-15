@@ -12,13 +12,13 @@ Production email delivery can be configured in either of these ways:
 For the public whytab launch, use:
 
 - Email provider: Resend Free
-- Domain target: `whytab.eu.org`
-- Sender target: `whytab <no-reply@whytab.eu.org>`
+- Domain target: `whytab.is-a.dev`
+- Sender target: `whytab <no-reply@whytab.is-a.dev>`
 - Supabase integration: Send Email Hook
 
-Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. EU.org provides free subdomain registration, but requests can require manual approval and should be treated as pending until the domain is active and DNS can be changed.
+Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. The `whytab.is-a.dev` subdomain is requested through is-a.dev pull request #43714. The automated test has passed, but the domain should be treated as pending until the pull request is merged and DNS is published.
 
-If `whytab.eu.org` is not approved quickly enough, buy a normal domain and keep the same Resend + Supabase Hook setup. A paid domain is usually more reliable for public product email deliverability.
+If `whytab.is-a.dev` is not approved quickly enough, buy a normal domain and keep the same Resend + Supabase Hook setup. A paid domain is usually more reliable for public product email deliverability.
 
 The repository includes a ready-to-deploy Send Email Hook at:
 
@@ -38,7 +38,7 @@ AUTH_EMAIL_PUBLIC_APP_URL
 Recommended values:
 
 ```txt
-AUTH_EMAIL_FROM=whytab <no-reply@whytab.eu.org>
+AUTH_EMAIL_FROM=whytab <no-reply@whytab.is-a.dev>
 AUTH_EMAIL_PUBLIC_APP_URL=https://muggler77.github.io/whytab/
 ```
 
