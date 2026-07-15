@@ -56,6 +56,7 @@ import { createPortal } from "react-dom";
 import { downloadJson, loadState, readKey, saveState, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
 import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText } from "./importers";
+import { MIGRATION_BACKUP_KEY, type StateBackup } from "./migrations";
 import { fetchRates, getCachedRates } from "./rates";
 import { DEFAULT_AUTH_REDIRECT_URL } from "./projectConfig";
 import { fetchWeather, fetchWeatherByCoordinates, getCachedWeather, getDevicePosition, weatherLabel } from "./weather";
@@ -406,6 +407,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [undoLabel, setUndoLabel] = useState("");
   const [restoreAvailable, setRestoreAvailable] = useState(false);
+  const [migrationBackupAvailable, setMigrationBackupAvailable] = useState(false);
   const stateRef = useRef(state);
   const syncLockRef = useRef(false);
   const undoSnapshotRef = useRef<AppState | undefined>();
@@ -427,6 +429,7 @@ export default function App() {
       setRates(cachedRates);
       if (cachedRates) setRatesMessage("已缓存");
       setRestoreAvailable(Boolean(await readKey(SYNC_RESTORE_KEY)));
+      setMigrationBackupAvailable(Boolean(await readKey(MIGRATION_BACKUP_KEY)));
       if (shouldRefreshExternalData(normalized, cachedWeather, cachedRates)) {
         window.setTimeout(() => void refreshExternalData(normalized), 450);
       }
@@ -655,6 +658,19 @@ export default function App() {
     setState(restored);
     stateRef.current = restored;
     showToast(`已回到${new Date(snapshot.savedAt).toLocaleString("zh-CN")}的本机版本`);
+  };
+
+  const restoreMigrationBackup = async () => {
+    const backup = await readKey<StateBackup>(MIGRATION_BACKUP_KEY);
+    if (!backup?.state) {
+      showToast("没有可恢复的更新前备份");
+      setMigrationBackupAvailable(false);
+      return;
+    }
+    const restored = normalizeState({ ...backup.state, updatedAt: nowIso() });
+    setState(restored);
+    stateRef.current = restored;
+    showToast(`已回到${new Date(backup.savedAt).toLocaleString("zh-CN")}的更新前数据`);
   };
 
   const performAutoSync = useCallback(async (reason: string) => {
@@ -1585,9 +1601,11 @@ export default function App() {
         <SettingsDialog
           state={state}
           updateCheck={updateCheck}
+          migrationBackupAvailable={migrationBackupAvailable}
           updateState={updateState}
           onImport={() => setDialog("import")}
           onExport={exportData}
+          onRestoreMigrationBackup={restoreMigrationBackup}
           onCheckUpdate={() => runUpdateCheck(true)}
           onClose={() => {
             setDialog(null);
@@ -3101,12 +3119,14 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
   );
 }
 
-function SettingsDialog({ state, updateCheck, updateState, onImport, onExport, onCheckUpdate, onClose }: {
+function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateState, onImport, onExport, onRestoreMigrationBackup, onCheckUpdate, onClose }: {
   state: AppState;
   updateCheck: UpdateCheckResult;
+  migrationBackupAvailable: boolean;
   updateState: (updater: (state: AppState) => AppState) => void;
   onImport: () => void;
   onExport: () => void;
+  onRestoreMigrationBackup: () => void;
   onCheckUpdate: () => void;
   onClose: () => void;
 }) {
@@ -3156,6 +3176,7 @@ function SettingsDialog({ state, updateCheck, updateState, onImport, onExport, o
           <button type="button" onClick={onImport}><Import size={16} /> 导入数据</button>
           <button type="button" onClick={onExport}><Download size={16} /> 导出备份</button>
         </div>
+        <button type="button" disabled={!migrationBackupAvailable} onClick={onRestoreMigrationBackup}><TimerReset size={16} /> 回到更新前数据</button>
       </div>
       <div className="settings-block version-settings">
         <div className="section-title compact-title">
