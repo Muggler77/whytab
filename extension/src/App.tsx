@@ -1837,7 +1837,7 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
           {touchArranging ? "完成" : "整理"}
         </button>
       </div>
-      <div className="home-shortcuts-row" style={{ "--icon": Math.max(46, Math.min(iconSize, 68)) + "px" } as React.CSSProperties}>
+      <div className="home-shortcuts-row" style={{ "--icon": Math.max(48, Math.min(iconSize, 80)) + "px" } as React.CSSProperties}>
         {tiles.map((item) => {
           const key = tileKey(item);
           return item.kind === "folder" ? (
@@ -1862,7 +1862,7 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
             onDrop={(event) => dropTile(event, key)}
           >
             <span className={"shortcut-icon folder-icon " + (item.folder.iconUrl ? "has-image" : "")} style={{ "--folder-color": item.folder.iconColor } as React.CSSProperties}>
-              {item.folder.iconUrl ? <img src={item.folder.iconUrl} alt="" /> : <Folder size={Math.round(Math.max(46, Math.min(iconSize, 68)) * 0.46)} />}
+              {item.folder.iconUrl ? <img src={item.folder.iconUrl} alt="" /> : <Folder size={Math.round(Math.max(48, Math.min(iconSize, 80)) * 0.46)} />}
             </span>
             <span>{item.folder.name}</span>
           </button>
@@ -3162,7 +3162,7 @@ function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateSt
         天气跟随设备位置
       </label>
       <label>毛玻璃<input type="range" min="35" max="92" value={settings.glass} onChange={(event) => setSetting("glass", Number(event.target.value))} /></label>
-      <label>图标尺寸<input type="range" min="48" max="88" value={settings.iconSize} onChange={(event) => setSetting("iconSize", Number(event.target.value))} /></label>
+      <label>图标尺寸<input type="range" min="48" max="80" value={settings.iconSize} onChange={(event) => setSetting("iconSize", Number(event.target.value))} /></label>
       <label>网格密度<select value={settings.gridDensity} onChange={(event) => setSetting("gridDensity", event.target.value as "comfortable" | "compact")}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label>
       <label>Dock 位置<select value={settings.dockPosition} onChange={(event) => setSetting("dockPosition", event.target.value as "top" | "bottom")}><option value="bottom">底部</option><option value="top">顶部</option></select></label>
       <div className="settings-block data-settings">

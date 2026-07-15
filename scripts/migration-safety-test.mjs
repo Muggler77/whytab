@@ -7,14 +7,26 @@ import { build } from "esbuild";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const tempDir = await mkdtemp(join(tmpdir(), "whytab-migration-test-"));
-const output = join(tempDir, "migrations.mjs");
+const migrationsOutput = join(tempDir, "migrations.mjs");
+const syncOutput = join(tempDir, "sync.mjs");
 
 globalThis.window = { crypto: globalThis.crypto };
 
 try {
   await build({
     entryPoints: [join(repoRoot, "extension/src/migrations.ts")],
-    outfile: output,
+    outfile: migrationsOutput,
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    define: {
+      "import.meta.env": "{}"
+    },
+    logLevel: "silent"
+  });
+  await build({
+    entryPoints: [join(repoRoot, "extension/src/sync.ts")],
+    outfile: syncOutput,
     bundle: true,
     platform: "browser",
     format: "esm",
@@ -24,7 +36,8 @@ try {
     logLevel: "silent"
   });
 
-  const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(output).href);
+  const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(migrationsOutput).href);
+  const { normalizeState } = await import(pathToFileURL(syncOutput).href);
   const now = new Date("2026-07-15T00:00:00.000Z").toISOString();
   const legacyState = {
     version: 1,
@@ -64,6 +77,19 @@ try {
 
   const invalid = migrateState({ bad: true });
   assert.equal(invalid.state.version, 1, "invalid state should recover to a valid default state");
+
+  const oldDefaultVisual = normalizeState({
+    ...legacyState,
+    settings: { ...legacyState.settings, iconSize: 64, visualRefreshVersion: 7 }
+  });
+  assert.equal(oldDefaultVisual.settings.iconSize, 58, "old default icon size should migrate to the new unified default");
+  assert.equal(oldDefaultVisual.settings.visualRefreshVersion, 8, "visual refresh version should advance");
+
+  const customIconSize = normalizeState({
+    ...legacyState,
+    settings: { ...legacyState.settings, iconSize: 72, visualRefreshVersion: 7 }
+  });
+  assert.equal(customIconSize.settings.iconSize, 72, "custom icon size should be preserved");
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

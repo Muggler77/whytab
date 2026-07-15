@@ -5714,9 +5714,8 @@ small,
 }
 
 .home-shortcut {
-  --icon: 52px !important;
-  min-height: 84px !important;
-  grid-template-rows: 52px 22px !important;
+  min-height: calc(var(--icon) + 32px) !important;
+  grid-template-rows: var(--icon) 22px !important;
   gap: 6px !important;
   padding: 4px 2px !important;
 }
@@ -8300,8 +8299,8 @@ small,
 }
 
 .home-dashboard .home-shortcut .shortcut-icon {
-  width: min(var(--icon), 58px) !important;
-  height: min(var(--icon), 58px) !important;
+  width: var(--icon) !important;
+  height: var(--icon) !important;
   border-radius: 15px !important;
   filter: none !important;
 }
