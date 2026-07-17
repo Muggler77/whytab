@@ -87,7 +87,7 @@ type SyncMode = "merge" | "push" | "pull";
 type AuthResult = { status: "signed-in" | "verification-sent"; message: string };
 
 const SYNC_RESTORE_KEY = "sync-restore-point";
-const PUBLIC_AUTH_REDIRECT_URL = "https://muggler77.github.io/whytab/";
+const PUBLIC_AUTH_REDIRECT_URL = "https://why-tool.com/";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;

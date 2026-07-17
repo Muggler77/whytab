@@ -20,7 +20,7 @@ It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app
 Open the public web app:
 
 ```text
-https://muggler77.github.io/whytab/
+https://why-tool.com/
 ```
 
 This is the easiest way to try whytab on iPhone, iPad, Android, tablets, and desktop browsers.
@@ -69,7 +69,7 @@ Sign-in is optional.
 在线版地址：
 
 ```text
-https://muggler77.github.io/whytab/
+https://why-tool.com/
 ```
 
 - 手机和平板：打开上面的地址，添加到主屏幕即可使用。
@@ -243,7 +243,7 @@ extension/dist
 
 ## Mobile and Tablet Web App
 
-The same frontend can be deployed to GitHub Pages or any static hosting provider. On iPhone and iPad, open the deployed URL in Safari and use "Add to Home Screen". On Android, use the browser's install/add-to-home-screen option.
+The same frontend can be deployed to GitHub Pages or any static hosting provider. The public whytab build uses `https://why-tool.com/`; the previous GitHub Pages URL may remain as a legacy fallback while older builds are still in use. On iPhone and iPad, open the deployed URL in Safari and use "Add to Home Screen". On Android, use the browser's install/add-to-home-screen option.
 
 After signing in with the same account, mobile and desktop clients can merge shortcuts, widgets, notes, todos, and settings.
 

@@ -12,13 +12,11 @@ Production email delivery can be configured in either of these ways:
 For the public whytab launch, use:
 
 - Email provider: Resend Free
-- Domain target: `whytab.is-a.dev`
-- Sender target: `whytab <no-reply@whytab.is-a.dev>`
+- Domain target: `why-tool.com`
+- Sender target: `whytab <no-reply@why-tool.com>`
 - Supabase integration: Send Email Hook
 
-Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. The `whytab.is-a.dev` subdomain is requested through is-a.dev pull request #43714. The pull request now includes the Resend DKIM, return-path/SPF, and DMARC records, and the automated test has passed. The domain should still be treated as pending until the pull request is merged and DNS is published.
-
-If `whytab.is-a.dev` is not approved quickly enough, buy a normal domain and keep the same Resend + Supabase Hook setup. A paid domain is usually more reliable for public product email deliverability.
+Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. Add the Resend DKIM, return-path/SPF, and DMARC records in Cloudflare DNS for `why-tool.com`, then wait until Resend marks the domain as verified.
 
 The repository includes a ready-to-deploy Send Email Hook at:
 
@@ -38,8 +36,8 @@ AUTH_EMAIL_PUBLIC_APP_URL
 Recommended values:
 
 ```txt
-AUTH_EMAIL_FROM=whytab <no-reply@whytab.is-a.dev>
-AUTH_EMAIL_PUBLIC_APP_URL=https://muggler77.github.io/whytab/
+AUTH_EMAIL_FROM=whytab <no-reply@why-tool.com>
+AUTH_EMAIL_PUBLIC_APP_URL=https://why-tool.com/
 ```
 
 Do not commit these values. Set them only in Supabase Secrets.

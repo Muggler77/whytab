@@ -22,8 +22,10 @@ type AuthEmailPayload = {
 const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
 const hookSecret = (Deno.env.get("SEND_EMAIL_HOOK_SECRET") || "").replace(/^v1,whsec_/, "");
 const fromAddress = Deno.env.get("AUTH_EMAIL_FROM") || "whytab <no-reply@example.com>";
-const publicAppUrl = Deno.env.get("AUTH_EMAIL_PUBLIC_APP_URL") || "https://muggler77.github.io/whytab/";
+const publicAppUrl = Deno.env.get("AUTH_EMAIL_PUBLIC_APP_URL") || "https://why-tool.com/";
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const normalizedPublicAppUrl = publicAppUrl.endsWith("/") ? publicAppUrl : `${publicAppUrl}/`;
+const publicLogoUrl = `${normalizedPublicAppUrl}icons/icon128.png`;
 
 const resend = resendApiKey ? new Resend(resendApiKey) : undefined;
 
@@ -75,7 +77,7 @@ function renderEmail(action: AuthEmailAction, verificationUrl: string, token?: s
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e6ebf2;border-radius:16px;overflow:hidden;">
           <tr>
             <td style="padding:30px 32px 18px;text-align:center;">
-              <img src="https://muggler77.github.io/whytab/icons/icon128.png" width="64" height="64" alt="whytab" style="display:block;margin:0 auto 16px;border-radius:16px;">
+              <img src="${publicLogoUrl}" width="64" height="64" alt="whytab" style="display:block;margin:0 auto 16px;border-radius:16px;">
               <div style="font-size:22px;font-weight:700;letter-spacing:0;color:#0f172a;">${title}</div>
               <div style="margin-top:8px;font-size:14px;line-height:1.7;color:#64748b;">请完成验证，以保护你的账号安全。</div>
             </td>
@@ -93,7 +95,7 @@ function renderEmail(action: AuthEmailAction, verificationUrl: string, token?: s
           <tr>
             <td style="padding:18px 32px;background:#f8fafc;border-top:1px solid #edf2f7;color:#64748b;font-size:12px;line-height:1.7;text-align:center;">
               whytab · local-first new tab dashboard<br>
-              <a href="https://muggler77.github.io/whytab/" style="color:#0f766e;text-decoration:none;">https://muggler77.github.io/whytab/</a>
+              <a href="${normalizedPublicAppUrl}" style="color:#0f766e;text-decoration:none;">${normalizedPublicAppUrl}</a>
             </td>
           </tr>
         </table>
@@ -112,7 +114,7 @@ ${verificationUrl || `验证码：${token || ""}`}
 如果你没有发起这项操作，可以忽略这封邮件。
 
 whytab
-https://muggler77.github.io/whytab/`
+${normalizedPublicAppUrl}`
   };
 }
 

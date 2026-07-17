@@ -47,8 +47,9 @@ Email verification is controlled in the Supabase project, not in the end-user UI
 
 Recommended Auth URL settings:
 
-- Site URL: `https://muggler77.github.io/whytab/`
-- Redirect URLs / Additional Redirect URLs: `https://muggler77.github.io/whytab/`
+- Site URL: `https://why-tool.com/`
+- Redirect URLs / Additional Redirect URLs: `https://why-tool.com/`
+- Legacy redirect URL while old builds are still in use: `https://muggler77.github.io/whytab/`
 - Local development redirect URL, if needed: `http://localhost:5173/`
 
 The app passes `emailRedirectTo` during registration. Hosted web builds redirect back to the current web app URL. Extension builds redirect to the public web app so the verification link can complete in a normal browser page.
@@ -68,7 +69,7 @@ Recommended confirmation email subject:
 确认你的 whytab 同步账号
 ```
 
-Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://muggler77.github.io/whytab/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
+Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://why-tool.com/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
 
 The template should keep Supabase's `{{ .ConfirmationURL }}` variable unchanged. Supabase replaces it with the real verification link.
 
