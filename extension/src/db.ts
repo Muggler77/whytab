@@ -6,6 +6,8 @@ const DB_NAME = "whytab";
 const DB_VERSION = 1;
 const STORE = "kv";
 const STATE_KEY = "app-state";
+const ANONYMOUS_STATE_KEY = "app-state:anonymous";
+const accountStateKey = (userId?: string) => userId ? `app-state:user:${userId}` : ANONYMOUS_STATE_KEY;
 const RATES_KEY = "rates-cache";
 const WEATHER_KEY = "weather-cache";
 
@@ -45,19 +47,34 @@ export async function writeKey<T>(key: string, value: T): Promise<void> {
   });
 }
 
-export async function loadState(): Promise<AppState> {
-  const stored = await readKey<AppState>(STATE_KEY);
+async function migrateStoredState(stored: AppState | undefined, save: (state: AppState) => Promise<void>): Promise<AppState> {
   const migration = migrateState(stored);
   if (migration.backup) await writeKey(MIGRATION_BACKUP_KEY, migration.backup);
-  if (stored && migration.migrated) await saveState(migration.state);
+  if (stored && migration.migrated) await save(migration.state);
   if (stored?.version === 1) return migration.state;
   const initial = defaultState();
-  await saveState(initial);
+  await save(initial);
   return initial;
+}
+
+export async function loadState(): Promise<AppState> {
+  const stored = await readKey<AppState>(STATE_KEY);
+  return migrateStoredState(stored, saveState);
 }
 
 export async function saveState(state: AppState): Promise<void> {
   await writeKey(STATE_KEY, state);
+}
+
+export async function loadStateForAccount(userId?: string): Promise<{ state: AppState; existed: boolean }> {
+  const key = accountStateKey(userId);
+  const stored = await readKey<AppState>(key);
+  const state = await migrateStoredState(stored, (next) => saveStateForAccount(next, userId));
+  return { state, existed: Boolean(stored) };
+}
+
+export async function saveStateForAccount(state: AppState, userId?: string): Promise<void> {
+  await writeKey(accountStateKey(userId), state);
 }
 
 export async function cacheWeather<T>(value: T): Promise<void> {

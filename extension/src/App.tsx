@@ -53,7 +53,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { downloadJson, loadState, readKey, saveState, writeKey } from "./db";
+import { downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
 import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText } from "./importers";
 import { MIGRATION_BACKUP_KEY, type StateBackup } from "./migrations";
@@ -409,6 +409,7 @@ export default function App() {
   const [restoreAvailable, setRestoreAvailable] = useState(false);
   const [migrationBackupAvailable, setMigrationBackupAvailable] = useState(false);
   const stateRef = useRef(state);
+  const activeUserIdRef = useRef<string | undefined>();
   const syncLockRef = useRef(false);
   const undoSnapshotRef = useRef<AppState | undefined>();
   const lastSyncedUpdatedAtRef = useRef<string | undefined>();
@@ -418,10 +419,79 @@ export default function App() {
     stateRef.current = state;
   }, [state]);
 
+  const applyState = (next: AppState) => {
+    setState(next);
+    stateRef.current = next;
+  };
+
+  const withCurrentServiceConfig = (next: AppState, source = stateRef.current) => ({
+    ...next,
+    settings: {
+      ...next.settings,
+      supabaseUrl: source.settings.supabaseUrl,
+      supabaseAnonKey: source.settings.supabaseAnonKey
+    }
+  });
+
+  const activateSignedInUser = async (user: NonNullable<SyncStatus["user"]>, reason = "正在加载账号数据") => {
+    activeUserIdRef.current = user.id;
+    setSync((old) => ({ ...old, user, syncing: true, message: reason }));
+
+    try {
+      const local = await loadStateForAccount(user.id);
+      let next = normalizeState(withCurrentServiceConfig(local.state));
+      const remote = await pullSnapshot(next);
+
+      if (remote) {
+        const normalizedRemote = normalizeState(remote);
+        if (local.existed) {
+          next = mergeRemote(next, normalizedRemote);
+          await pushSnapshot(next);
+          next = markPushed(next);
+        } else {
+          next = markPulled(withCurrentServiceConfig({
+            ...normalizedRemote,
+            sync: {
+              ...next.sync,
+              lastRemoteUpdatedAt: normalizedRemote.updatedAt
+            }
+          }), normalizedRemote);
+        }
+      } else {
+        await pushSnapshot(next);
+        next = markPushed(next);
+      }
+
+      lastSyncedUpdatedAtRef.current = next.updatedAt;
+      applyState(next);
+      await saveStateForAccount(next, user.id);
+      setSync({
+        user,
+        syncing: false,
+        autoSync: next.sync?.autoSync,
+        message: `已登录 ${user.email}`,
+        lastSyncedAt: next.sync?.lastPushedAt || next.sync?.lastPulledAt || nowIso()
+      });
+      return next;
+    } catch (error) {
+      setSync((old) => ({
+        ...old,
+        user,
+        syncing: false,
+        message: error instanceof Error ? `账号数据加载失败：${error.message}` : "账号数据加载失败"
+      }));
+      throw error;
+    }
+  };
+
   useEffect(() => {
-    loadState().then(async (loaded) => {
-      const normalized = normalizeState(loaded);
-      setState(normalized);
+    (async () => {
+      const bootState = defaultState();
+      const user = await getUser(bootState.settings.supabaseUrl, bootState.settings.supabaseAnonKey).catch(() => null);
+      activeUserIdRef.current = user?.id;
+      const accountState = await loadStateForAccount(user?.id);
+      const normalized = normalizeState(accountState.state);
+      applyState(normalized);
       setReady(true);
       const cachedWeather = await getCachedWeather();
       const cachedRates = await getCachedRates();
@@ -430,17 +500,17 @@ export default function App() {
       if (cachedRates) setRatesMessage("已缓存");
       setRestoreAvailable(Boolean(await readKey(SYNC_RESTORE_KEY)));
       setMigrationBackupAvailable(Boolean(await readKey(MIGRATION_BACKUP_KEY)));
+      setSync((old) => ({ ...old, user, autoSync: normalized.sync?.autoSync, message: user ? `已登录 ${user.email}` : "未登录" }));
       if (shouldRefreshExternalData(normalized, cachedWeather, cachedRates)) {
         window.setTimeout(() => void refreshExternalData(normalized), 450);
       }
-      const user = await refreshUser(normalized);
-      if (user && normalized.sync?.autoSync) window.setTimeout(() => void performAutoSync("打开页面自动同步"), 300);
-    });
+      if (user && normalized.sync?.autoSync) window.setTimeout(() => void activateSignedInUser(user, "打开页面自动同步"), 300);
+    })();
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    saveState(state);
+    saveStateForAccount(state, activeUserIdRef.current);
     if (!state.sync?.autoSync || !state.settings.supabaseUrl || !state.settings.supabaseAnonKey) return;
     if (state.updatedAt === lastSyncedUpdatedAtRef.current) return;
     const timer = window.setTimeout(() => {
@@ -488,8 +558,7 @@ export default function App() {
     const restored = { ...snapshot, updatedAt: nowIso() };
     undoSnapshotRef.current = undefined;
     setUndoLabel("");
-    setState(restored);
-    stateRef.current = restored;
+    applyState(restored);
     setToast("已撤销");
     window.setTimeout(() => setToast(""), 1800);
   };
@@ -655,8 +724,7 @@ export default function App() {
       return;
     }
     const restored = { ...snapshot.state, updatedAt: nowIso() };
-    setState(restored);
-    stateRef.current = restored;
+    applyState(restored);
     showToast(`已回到${new Date(snapshot.savedAt).toLocaleString("zh-CN")}的本机版本`);
   };
 
@@ -668,8 +736,7 @@ export default function App() {
       return;
     }
     const restored = normalizeState({ ...backup.state, updatedAt: nowIso() });
-    setState(restored);
-    stateRef.current = restored;
+    applyState(restored);
     showToast(`已回到${new Date(backup.savedAt).toLocaleString("zh-CN")}的更新前数据`);
   };
 
@@ -691,7 +758,8 @@ export default function App() {
       await pushSnapshot(merged);
       const pushed = markPushed(merged);
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
-      setState(pushed);
+      applyState(pushed);
+      await saveStateForAccount(pushed, user.id);
       setSync({
         user,
         syncing: false,
@@ -1103,7 +1171,8 @@ export default function App() {
         await pushSnapshot(current);
         const pushed = markPushed(current);
         lastSyncedUpdatedAtRef.current = pushed.updatedAt;
-        setState(pushed);
+        applyState(pushed);
+        await saveStateForAccount(pushed, activeUserIdRef.current);
         setSync((old) => ({ ...old, syncing: false, message: "已用本机版本覆盖云端", lastSyncedAt: pushed.sync?.lastPushedAt || nowIso() }));
         return;
       }
@@ -1129,7 +1198,8 @@ export default function App() {
           }
         }, normalizedRemote);
         lastSyncedUpdatedAtRef.current = pulled.updatedAt;
-        setState(pulled);
+        applyState(pulled);
+        await saveStateForAccount(pulled, activeUserIdRef.current);
         setSync((old) => ({ ...old, syncing: false, message: "已用云端版本覆盖本机", lastSyncedAt: pulled.sync?.lastPulledAt || nowIso() }));
         return;
       }
@@ -1138,7 +1208,8 @@ export default function App() {
       await pushSnapshot(merged);
       const pushed = markPushed(merged);
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
-      setState(pushed);
+      applyState(pushed);
+      await saveStateForAccount(pushed, activeUserIdRef.current);
       setSync((old) => ({ ...old, syncing: false, message: "已合并本机与云端，并同步到云端", lastSyncedAt: pushed.sync?.lastPushedAt || nowIso() }));
     } catch (error) {
       setSync((old) => ({ ...old, syncing: false, message: error instanceof Error ? error.message : "同步失败" }));
@@ -1623,10 +1694,10 @@ export default function App() {
             const { supabaseUrl, supabaseAnonKey } = state.settings;
             if (!supabaseUrl || !supabaseAnonKey) throw new Error("同步服务暂未配置，请稍后再试");
             if (mode === "login") {
-              await signIn(supabaseUrl, supabaseAnonKey, email, password);
-              await refreshUser();
-              await performAutoSync("登录后自动同步");
-              return { status: "signed-in", message: "登录成功，正在同步数据。" };
+              const user = await signIn(supabaseUrl, supabaseAnonKey, email, password);
+              if (!user) throw new Error("登录成功但没有返回账号信息，请重试");
+              await activateSignedInUser(user, "正在加载账号数据");
+              return { status: "signed-in", message: "登录成功，已加载此账号的数据。" };
             }
 
             const result = await signUp(supabaseUrl, supabaseAnonKey, email, password, getAuthRedirectUrl());
@@ -1637,13 +1708,20 @@ export default function App() {
               return { status: "verification-sent", message };
             }
 
-            await refreshUser();
-            await performAutoSync("登录后自动同步");
-            return { status: "signed-in", message: "注册成功，已登录并开始同步。" };
+            if (!result.user) throw new Error("注册成功但没有返回账号信息，请重试");
+            await activateSignedInUser(result.user, "正在初始化账号数据");
+            return { status: "signed-in", message: "注册成功，已加载此账号的数据。" };
           }}
           onSignOut={async () => {
+            await saveStateForAccount(stateRef.current, activeUserIdRef.current);
             await signOut(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
-            await refreshUser();
+            activeUserIdRef.current = undefined;
+            const blank = normalizeState(defaultState());
+            applyState(blank);
+            await saveStateForAccount(blank);
+            setSync({ user: null, syncing: false, autoSync: blank.sync?.autoSync, message: "未登录" });
+            lastSyncedUpdatedAtRef.current = undefined;
+            showToast("已退出登录，本机已切换到未登录空白数据");
           }}
           onSync={doSync}
           restoreAvailable={restoreAvailable}
