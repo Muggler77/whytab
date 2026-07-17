@@ -11,14 +11,14 @@
   "theme_color": "#0c111d",
   "icons": [
     {
-      "src": "./icons/icon128.svg",
+      "src": "./icons/icon128.png",
       "sizes": "128x128",
-      "type": "image/svg+xml"
+      "type": "image/png"
     },
     {
-      "src": "./icons/icon128.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./icons/icon128.png",
+      "sizes": "128x128",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

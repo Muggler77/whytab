@@ -228,11 +228,15 @@ extension/dist
 
 ## Chrome Installation
 
+For public distribution, publish the packaged extension through the Chrome Web Store. Local unpacked installation is intended for development and trusted local testing; Chrome will label it as an unpacked extension by design.
+
 1. Open `chrome://extensions/`.
 2. Enable Developer mode.
 3. Click "Load unpacked".
 4. Select `extension/dist`.
 5. Open a new tab.
+
+For Chrome Web Store submission, upload a zip whose root contains `manifest.json` and the built assets from `extension/dist`.
 
 ## Edge Installation
 

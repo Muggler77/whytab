@@ -1,5 +1,5 @@
 const CACHE_NAME = "whytab-shell-v1";
-const APP_SHELL = ["./", "./app.webmanifest", "./icons/icon128.svg"];
+const APP_SHELL = ["./", "./app.webmanifest", "./icons/icon128.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
