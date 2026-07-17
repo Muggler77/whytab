@@ -1794,7 +1794,7 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
         <div>
           <span>Tools</span>
           <h2>工具箱</h2>
-          <p>把 Wetab 里常用的工具入口集中到左侧导航，不再藏在设置和右键菜单里。</p>
+          <p>把 whytab 常用工具集中到左侧导航，不再藏在设置和右键菜单里。</p>
         </div>
       </div>
       <div className="tool-utility-grid">
@@ -2940,7 +2940,7 @@ function ImportDialog({ existingShortcuts, onClose, onImport }: {
         <button disabled={!count} onClick={() => onImport(text, "append")}><Plus size={16} /> 追加导入</button>
         <button className="primary" disabled={!count} onClick={() => onImport(text, "replace")}><Check size={16} /> 按文件重建</button>
       </div>
-      <p className="hint">想恢复 Wetab 顺序时，用“按文件重建”。它会保留旧数据墓碑用于同步防回流，并按文件顺序重新生成快捷导航。</p>
+      <p className="hint">想按导入文件的顺序重建时，用“按文件重建”。它会保留旧数据墓碑用于同步防回流，并按文件顺序重新生成快捷导航。</p>
     </DialogShell>
   );
 }

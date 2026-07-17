@@ -10,7 +10,7 @@ It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app
 - Optional cloud sync: users can register or sign in with email and password to sync across devices.
 - User data isolation: cloud data is protected by Supabase Auth and Row Level Security.
 - Cross-platform usage: works on macOS, Windows, iOS, iPadOS, Android, and other modern browsers depending on extension/PWA support.
-- Import and backup: supports JSON, browser bookmarks HTML, CSV, and Wetab migration input.
+- Import and backup: supports whytab JSON, browser bookmarks HTML, CSV, and old new-tab page migration input.
 - Private by default on each device: the app remains usable offline and does not require sign-in for local use.
 
 ## Download and Use
@@ -106,7 +106,7 @@ The browser extension replaces the new tab page where the browser supports `chro
 - Automatic favicon matching
 - Custom icon URL and icon color
 - Search/filter shortcuts
-- Import from Wetab, bookmarks, CSV, or whytab JSON
+- Import from browser bookmarks, CSV, old new-tab page captures, or whytab JSON
 
 ### Widgets
 
@@ -271,7 +271,7 @@ Supported import formats:
 - whytab JSON
 - Browser bookmarks HTML
 - CSV
-- Wetab page capture output
+- Old new-tab page capture output
 
 Use "Export" after setting up your dashboard to keep an offline JSON backup. Cloud sync is useful for multiple devices, but local export remains the easiest recovery path after browser resets or migrations.
 

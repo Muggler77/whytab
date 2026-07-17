@@ -32,17 +32,17 @@
 
 未登录时，用户数据只保存在当前浏览器的 IndexedDB 中。
 
-## 导入 Wetab 快捷导航
+## 导入旧新标签页快捷导航
 
-Wetab 没有可用导出文件时，可以尝试半自动读取页面：
+旧新标签页没有可用导出文件时，可以尝试半自动读取页面：
 
-1. 打开当前 Wetab 新标签页。
+1. 打开旧新标签页。
 2. 打开浏览器开发者工具 Console。
-3. 粘贴并运行 `tools/wetab-page-sniffer.js` 的内容。
+3. 粘贴并运行 `tools/newtab-page-sniffer.js` 的内容。
 4. 脚本会把可见链接复制成 JSON。
 5. 回到 whytab，点击“导入”，粘贴 JSON 并确认。
 
-如果浏览器阻止读取或 Wetab 页面不是普通链接结构，可以导入浏览器书签 HTML、CSV 或 whytab JSON。
+如果浏览器阻止读取或旧页面不是普通链接结构，可以导入浏览器书签 HTML、CSV 或 whytab JSON。
 
 ## 备份
 

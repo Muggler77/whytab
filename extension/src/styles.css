@@ -1462,7 +1462,7 @@ small,
   white-space: nowrap;
   font-weight: 680;
 }
-/* 2026-07 wetab-like two-page rebuild */
+/* 2026-07 two-page rebuild */
 .app::before {
   transform: scale(1.006);
   filter: saturate(1.18) contrast(1.04) brightness(1.08);
@@ -5232,7 +5232,7 @@ small,
 .timezone-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
-/* 2026-07 Wetab-style home shortcut lane */
+/* 2026-07 home shortcut lane */
 .home-shortcuts,
 .home-shortcuts-head,
 .home-shortcuts-row {
@@ -8017,7 +8017,7 @@ small,
 }
 
 
-/* 2026-07 Wetab-priority home reset: shortcuts first, widgets as a quiet shelf. */
+/* 2026-07 home reset: shortcuts first, widgets as a quiet shelf. */
 .home-dashboard {
   width: min(1040px, calc(100vw - 156px)) !important;
   display: grid !important;

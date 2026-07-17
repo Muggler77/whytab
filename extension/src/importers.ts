@@ -216,7 +216,7 @@ export function importedToShortcuts(
   const folderByKey = new Map(folders.map((folder) => [`${folder.groupId || ""}::${folder.name.toLowerCase()}`, folder]));
 
   const ensureGroup = (name?: string) => {
-    const label = name?.trim() || "Wetab 快捷导航";
+    const label = name?.trim() || "导入快捷导航";
     const key = label.toLowerCase();
     let group = groupByName.get(key);
     if (!group) {
