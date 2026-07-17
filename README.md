@@ -258,7 +258,7 @@ The hosted sync backend uses Supabase:
 
 Public users do not need to enter service URLs or API keys. The hosted build injects frontend sync configuration during build. If you fork and self-host, configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
 
-For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. Public signup should use Custom SMTP or the Send Email Hook in `docs/auth-email-delivery.md`. After enabling Custom SMTP, use the branded confirmation template in `docs/supabase-confirm-signup-email.html`; it clearly says it is from whytab, explains that it verifies a sync account, includes the whytab logo, and keeps the `{{ .ConfirmationURL }}` variable intact.
+For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. The public whytab deployment uses Resend through Supabase Custom SMTP, with the production details documented in `docs/auth-email-delivery.md`. The branded confirmation template in `docs/supabase-confirm-signup-email.html` clearly says it is from whytab, explains that it verifies a sync account, includes the whytab logo, and keeps the `{{ .ConfirmationURL }}` variable intact.
 
 ## Import and Backup
 
