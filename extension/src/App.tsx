@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Bot,
+  Briefcase,
   Brush,
   Calculator,
   Camera,
@@ -75,9 +76,9 @@ import {
   signUp,
   type SyncStatus
 } from "./sync";
-import type { AppState, Countdown, RatesState, SearchEngine, Shortcut, ShortcutFolder, Todo, WeatherState, WidgetKey, WidgetSize } from "./types";
+import type { AppState, Countdown, CustomNavPage, CustomNavPageIcon, RatesState, SearchEngine, Shortcut, ShortcutFolder, Todo, WeatherState, WidgetKey, WidgetSize } from "./types";
 
-type Dialog = "shortcut" | "folder" | "import" | "library" | "settings" | "sync" | "timezone" | null;
+type Dialog = "shortcut" | "folder" | "import" | "library" | "pages" | "settings" | "sync" | "timezone" | null;
 type ShortcutMenuState = { x: number; y: number; shortcutId: string } | null;
 type PageMenuState = { x: number; y: number } | null;
 type WidgetMenuState = { x: number; y: number; widgetKey?: WidgetKey } | null;
@@ -93,7 +94,7 @@ const HOSTED_APP_ORIGIN = "https://why-tool.com";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-const ICON_LOAD_TIMEOUT_MS = 2200;
+const ICON_LOAD_TIMEOUT_MS = 1400;
 
 const isFreshCache = (updatedAt?: string, maxAge = WEATHER_CACHE_MAX_AGE_MS) => {
   if (!updatedAt) return false;
@@ -130,6 +131,21 @@ const widgetNames: Record<WidgetKey, string> = {
   memo: "便签",
   year: "年度进度",
   calculator: "计算器"
+};
+
+const widgetDescriptions: Record<WidgetKey, string> = {
+  weather: "实时概览",
+  calendar: "本月日程",
+  countdowns: "重要节点",
+  todos: "今日任务",
+  notes: "个人画框",
+  rates: "实时换算",
+  quote: "今日一句",
+  focus: "25 分钟",
+  clock: "多地时间",
+  memo: "快速记录",
+  year: "时间进度",
+  calculator: "快速计算"
 };
 
 const widgetLibraryMeta: Record<WidgetKey, {
@@ -171,6 +187,15 @@ const widgetSizeOptions: Record<WidgetKey, WidgetSize[]> = {
   memo: allWidgetSizes,
   year: allWidgetSizes,
   calculator: allWidgetSizes
+};
+
+const customNavPageIcons: Record<CustomNavPageIcon, { label: string; Icon: typeof CalendarDays }> = {
+  star: { label: "收藏", Icon: Star },
+  briefcase: { label: "工作", Icon: Briefcase },
+  book: { label: "学习", Icon: BookOpen },
+  code: { label: "开发", Icon: Code2 },
+  heart: { label: "生活", Icon: HeartPulse },
+  plane: { label: "旅行", Icon: Plane }
 };
 
 const ensureUrl = (url: string) => (/^https?:\/\//i.test(url) ? url : `https://${url}`);
@@ -235,13 +260,13 @@ function BuiltInShortcutIcon({ iconUrl, fallback = "" }: { iconUrl?: string; fal
   return <span className="built-in-shortcut-glyph" style={{ "--icon-tone": icon.tone } as React.CSSProperties}><Icon size={22} strokeWidth={2.3} /></span>;
 }
 
-function ShortcutIconContent({ url, iconUrl, fallback = "" }: { url: string; iconUrl?: string; fallback?: string }) {
+function ShortcutIconContent({ url, iconUrl, fallback = "", priority = false }: { url: string; iconUrl?: string; fallback?: string; priority?: boolean }) {
   const builtInIcon = builtInShortcutIconFor(iconUrl);
   if (builtInIcon) return <BuiltInShortcutIcon iconUrl={iconUrl} fallback={fallback} />;
-  return <ShortcutIconImage url={url} iconUrl={iconUrl} fallback={fallback} />;
+  return <ShortcutIconImage url={url} iconUrl={iconUrl} fallback={fallback} priority={priority} />;
 }
 
-function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "" }: { url: string; iconUrl?: string; alt?: string; fallback?: string }) {
+function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "", priority = false }: { url: string; iconUrl?: string; alt?: string; fallback?: string; priority?: boolean }) {
   const candidates = useMemo(() => iconCandidatesFor(url, iconUrl), [url, iconUrl]);
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -269,19 +294,23 @@ function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "" }: { url: str
   if (!current || index >= candidates.length) return <span className="shortcut-icon-fallback">{fallbackText}</span>;
   return (
     <>
-      <span className="shortcut-icon-fallback" aria-hidden={loaded}>{fallbackText}</span>
+      {!loaded && <span className="shortcut-icon-fallback" aria-hidden="true">{fallbackText}</span>}
       <img
         className={`shortcut-icon-image ${loaded ? "is-loaded" : ""}`}
         src={current}
         alt={alt}
-        loading="lazy"
+        loading={priority ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
         onLoad={() => {
           loadedRef.current = true;
           setLoaded(true);
         }}
-        onError={() => setIndex((value) => value + 1)}
+        onError={() => {
+          loadedRef.current = false;
+          setLoaded(false);
+          setIndex((value) => value + 1);
+        }}
       />
     </>
   );
@@ -427,6 +456,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [activePage, setActivePage] = useState<HomePage>("widgets");
+  const [activeCustomPageId, setActiveCustomPageId] = useState<string | undefined>();
   const [pageMotion, setPageMotion] = useState<"up" | "down" | undefined>();
   const [editingShortcut, setEditingShortcut] = useState<Shortcut | undefined>();
   const [editingFolder, setEditingFolder] = useState<ShortcutFolder | undefined>();
@@ -437,7 +467,7 @@ export default function App() {
   const [searchText, setSearchText] = useState("");
   const [clock, setClock] = useState(() => new Date());
   const [activeLayer, setActiveLayer] = useState("all");
-  const [touchArrangeWidgets, setTouchArrangeWidgets] = useState(false);
+  const [layoutEditing, setLayoutEditing] = useState(false);
   const [touchWidgetKey, setTouchWidgetKey] = useState<WidgetKey | undefined>();
   const [dragId, setDragId] = useState<string | undefined>();
   const [weather, setWeather] = useState<WeatherState | undefined>();
@@ -738,6 +768,16 @@ export default function App() {
     return state.shortcutGroups.filter((group) => !group.deletedAt).sort((a, b) => a.order - b.order);
   }, [state.shortcutGroups]);
 
+  const customNavPages = useMemo(() => {
+    const liveGroupIds = new Set(groups.map((group) => group.id));
+    return (state.settings.customNavPages || [])
+      .filter((page) => liveGroupIds.has(page.groupId))
+      .sort((a, b) => a.order - b.order);
+  }, [groups, state.settings.customNavPages]);
+
+  const hiddenNavPages = useMemo(() => new Set(state.settings.hiddenNavPages || []), [state.settings.hiddenNavPages]);
+  const visibleSystemPageOrder = useMemo(() => homePageOrder.filter((page) => page === "widgets" || !hiddenNavPages.has(page)), [hiddenNavPages]);
+
   const allShortcuts = useMemo(() => {
     return state.shortcuts.filter((shortcut) => !shortcut.deletedAt).sort((a, b) => a.order - b.order);
   }, [state.shortcuts]);
@@ -750,6 +790,14 @@ export default function App() {
     if (activeLayer === "all" || activeLayer === "pinned") return;
     if (!groups.some((group) => group.id === activeLayer)) setActiveLayer("all");
   }, [activeLayer, groups]);
+
+  useEffect(() => {
+    if (!activeCustomPageId) return;
+    if (customNavPages.some((page) => page.id === activeCustomPageId)) return;
+    setActiveCustomPageId(undefined);
+    setActiveLayer("all");
+    setActivePage("widgets");
+  }, [activeCustomPageId, customNavPages]);
 
   const visibleFolders = useMemo(() => {
     if (activeLayer === "pinned") return [];
@@ -807,6 +855,7 @@ export default function App() {
     : activeLayer === "pinned"
       ? "Dock 固定"
       : groups.find((group) => group.id === activeLayer)?.name || "快捷导航";
+  const activeCustomNavPage = customNavPages.find((page) => page.id === activeCustomPageId);
   const today = clock;
   const selectedTimeZone = state.settings.timeZone || "Asia/Shanghai";
   const selectedTimeZoneOption = timeZoneOptions.find((item) => item.value === selectedTimeZone) || timeZoneOptions[0];
@@ -928,6 +977,20 @@ export default function App() {
     setEditingShortcut(undefined);
   };
 
+  const openNewShortcut = (groupId?: string) => {
+    setEditingShortcut({
+      id: "",
+      title: "",
+      url: "",
+      iconColor: "#14B8A6",
+      groupId: groupId || groups[0]?.id,
+      pinned: false,
+      order: state.shortcuts.length,
+      updatedAt: nowIso()
+    });
+    setDialog("shortcut");
+  };
+
   const deleteShortcut = (id: string) => {
     rememberUndo("删除网站");
     const deletedAt = nowIso();
@@ -964,6 +1027,18 @@ export default function App() {
     });
     setDialog(null);
     setEditingFolder(undefined);
+  };
+
+  const openNewFolder = (groupId?: string) => {
+    setEditingFolder({
+      id: "",
+      name: "",
+      groupId: groupId || groups[0]?.id,
+      iconColor: "#14B8A6",
+      order: state.shortcutFolders.length,
+      updatedAt: nowIso()
+    });
+    setDialog("folder");
   };
 
   const deleteFolder = (id: string) => {
@@ -1058,6 +1133,84 @@ export default function App() {
     }));
     if (activeLayer === id) setActiveLayer(liveGroups[0].id);
     showToast("已删除分类");
+  };
+
+  const addCustomNavPage = (name: string, icon: CustomNavPageIcon) => {
+    const label = name.trim();
+    if (!label) return;
+    if (customNavPages.some((page) => page.name.toLowerCase() === label.toLowerCase())) {
+      showToast("已经有同名页面");
+      return;
+    }
+    const pageId = uid();
+    const groupId = uid();
+    const updatedAt = nowIso();
+    updateState((current) => ({
+      ...current,
+      shortcutGroups: [
+        ...current.shortcutGroups,
+        {
+          id: groupId,
+          name: label,
+          color: colorFor(label),
+          order: current.shortcutGroups.filter((group) => !group.deletedAt).length,
+          updatedAt
+        }
+      ],
+      settings: {
+        ...current.settings,
+        customNavPages: [
+          ...(current.settings.customNavPages || []),
+          { id: pageId, name: label, groupId, icon, order: (current.settings.customNavPages || []).length, updatedAt }
+        ],
+        updatedAt
+      }
+    }));
+    setActiveCustomPageId(pageId);
+    setActiveLayer(groupId);
+    setActivePage("shortcuts");
+    setDialog(null);
+    showToast(`已创建“${label}”页面`);
+  };
+
+  const deleteCustomNavPage = (page: CustomNavPage) => {
+    const confirmed = window.confirm(`从导航删除“${page.name}”？其中的网站和分类会继续保留。`);
+    if (!confirmed) return;
+    rememberUndo("删除导航页面");
+    updateState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        customNavPages: (current.settings.customNavPages || [])
+          .filter((item) => item.id !== page.id)
+          .map((item, order) => ({ ...item, order })),
+        updatedAt: nowIso()
+      }
+    }));
+    if (activeCustomPageId === page.id) {
+      setActiveCustomPageId(undefined);
+      setActiveLayer("all");
+      setActivePage("widgets");
+    }
+    showToast("页面入口已删除，原有网站仍保留");
+  };
+
+  const toggleSystemNavPage = (page: "shortcuts" | "tools") => {
+    const currentlyHidden = hiddenNavPages.has(page);
+    updateState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        hiddenNavPages: currentlyHidden
+          ? (current.settings.hiddenNavPages || []).filter((item) => item !== page)
+          : Array.from(new Set([...(current.settings.hiddenNavPages || []), page])),
+        updatedAt: nowIso()
+      }
+    }));
+    if (!currentlyHidden && activePage === page && !activeCustomPageId) {
+      setActivePage("widgets");
+      setActiveLayer("all");
+    }
   };
 
   const moveShortcut = (targetId: string) => {
@@ -1346,27 +1499,39 @@ export default function App() {
   } as React.CSSProperties;
   const widgetSizes = { ...defaultWidgetSizes, ...(state.settings.widgetSizes || {}) };
   const widgetRenderers: Record<WidgetKey, React.ReactNode> = {
-    weather: <WeatherWidget widgetKey="weather" size={widgetSizes.weather} weather={weather} city={state.settings.city} useLocation={state.settings.weatherUseLocation ?? false} refreshing={weatherRefreshing} onRefresh={() => refreshExternalData(state, true)} />,
-    quote: <QuoteWidget widgetKey="quote" size={widgetSizes.quote} date={today} />,
-    calendar: <CalendarWidget widgetKey="calendar" size={widgetSizes.calendar} date={today} state={state} updateState={updateState} />,
-    countdowns: <CountdownWidget widgetKey="countdowns" size={widgetSizes.countdowns} state={state} updateState={updateState} />,
-    todos: <TodoWidget widgetKey="todos" size={widgetSizes.todos} state={state} updateState={updateState} />,
-    focus: <FocusWidget widgetKey="focus" size={widgetSizes.focus} />,
-    notes: <PhotoWidget widgetKey="notes" size={widgetSizes.notes} state={state} updateState={updateState} />,
-    rates: <RatesWidget widgetKey="rates" size={widgetSizes.rates} rates={rates} message={ratesMessage} refreshing={ratesRefreshing} onRefresh={() => refreshExternalData(state, true)} />,
-    clock: <WorldClockWidget widgetKey="clock" size={widgetSizes.clock} date={clock} timeZone={state.settings.timeZone || "Asia/Shanghai"} />,
-    memo: <MemoWidget widgetKey="memo" size={widgetSizes.memo} state={state} updateState={updateState} />,
-    year: <YearProgressWidget widgetKey="year" size={widgetSizes.year} date={today} />,
-    calculator: <CalculatorWidget widgetKey="calculator" size={widgetSizes.calculator} />
+    weather: <WeatherWidget key="weather" widgetKey="weather" size={widgetSizes.weather} weather={weather} city={state.settings.city} useLocation={state.settings.weatherUseLocation ?? false} refreshing={weatherRefreshing} onRefresh={() => refreshExternalData(state, true)} />,
+    quote: <QuoteWidget key="quote" widgetKey="quote" size={widgetSizes.quote} date={today} />,
+    calendar: <CalendarWidget key="calendar" widgetKey="calendar" size={widgetSizes.calendar} date={today} state={state} updateState={updateState} />,
+    countdowns: <CountdownWidget key="countdowns" widgetKey="countdowns" size={widgetSizes.countdowns} state={state} updateState={updateState} />,
+    todos: <TodoWidget key="todos" widgetKey="todos" size={widgetSizes.todos} state={state} updateState={updateState} />,
+    focus: <FocusWidget key="focus" widgetKey="focus" size={widgetSizes.focus} />,
+    notes: <PhotoWidget key="notes" widgetKey="notes" size={widgetSizes.notes} state={state} updateState={updateState} />,
+    rates: <RatesWidget key="rates" widgetKey="rates" size={widgetSizes.rates} rates={rates} message={ratesMessage} refreshing={ratesRefreshing} onRefresh={() => refreshExternalData(state, true)} />,
+    clock: <WorldClockWidget key="clock" widgetKey="clock" size={widgetSizes.clock} date={clock} timeZone={state.settings.timeZone || "Asia/Shanghai"} />,
+    memo: <MemoWidget key="memo" widgetKey="memo" size={widgetSizes.memo} state={state} updateState={updateState} />,
+    year: <YearProgressWidget key="year" widgetKey="year" size={widgetSizes.year} date={today} />,
+    calculator: <CalculatorWidget key="calculator" widgetKey="calculator" size={widgetSizes.calculator} />
   };
 
   const goToPage = (nextPage: HomePage) => {
-    if (nextPage === activePage) return;
-    const currentIndex = homePageOrder.indexOf(activePage);
-    const nextIndex = homePageOrder.indexOf(nextPage);
+    if (nextPage === activePage && !activeCustomPageId) return;
+    const currentIndex = visibleSystemPageOrder.indexOf(activePage);
+    const nextIndex = visibleSystemPageOrder.indexOf(nextPage);
     setPageMotion(nextIndex > currentIndex ? "down" : "up");
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    setActiveCustomPageId(undefined);
+    if (nextPage === "shortcuts") setActiveLayer("all");
     setActivePage(nextPage);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+  };
+
+  const goToCustomPage = (page: CustomNavPage) => {
+    if (activeCustomPageId === page.id) return;
+    setPageMotion("down");
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    setActiveCustomPageId(page.id);
+    setActiveLayer(page.groupId);
+    setActivePage("shortcuts");
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   };
 
@@ -1381,7 +1546,8 @@ export default function App() {
     const direction = event.deltaY > 0 ? 1 : -1;
     if ((direction > 0 && !atBottom) || (direction < 0 && !atTop)) return;
 
-    const nextPage = homePageOrder[homePageOrder.indexOf(activePage) + direction];
+    if (activeCustomPageId) return;
+    const nextPage = visibleSystemPageOrder[visibleSystemPageOrder.indexOf(activePage) + direction];
     if (!nextPage) return;
     const now = Date.now();
     if (now < wheelPageLockRef.current) return;
@@ -1392,12 +1558,14 @@ export default function App() {
 
   const widgetsPanel = (
     <section
-      className={`widgets home-widgets ${touchArrangeWidgets ? "touch-arranging" : ""}`}
+      className={`widgets home-widgets ${layoutEditing ? "layout-editing touch-arranging" : ""}`}
       aria-label="主页小组件"
       data-touch-source={touchWidgetKey}
       onClickCapture={(event) => {
-        if (!touchArrangeWidgets) return;
-        const widget = (event.target as HTMLElement).closest(".widget") as HTMLElement | null;
+        if (!layoutEditing) return;
+        const target = event.target as HTMLElement;
+        if (target.closest("button, input, select, textarea, a, label")) return;
+        const widget = target.closest(".widget") as HTMLElement | null;
         const key = widget?.dataset.widgetKey as WidgetKey | undefined;
         if (!key) return;
         event.preventDefault();
@@ -1413,13 +1581,6 @@ export default function App() {
         }
         setTouchWidgetKey(undefined);
       }}
-      onMouseDown={(event) => {
-        if (event.button !== 2) return;
-        const target = event.target as HTMLElement;
-        if (target.closest("input") || target.closest("select") || target.closest("textarea")) return;
-        const widget = target.closest(".widget") as HTMLElement | null;
-        openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
-      }}
       onContextMenu={(event) => {
         const target = event.target as HTMLElement;
         if (target.closest("input") || target.closest("select") || target.closest("textarea")) return;
@@ -1427,13 +1588,26 @@ export default function App() {
         openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
       }}
       onDragOver={(event) => {
-        if ((event.target as HTMLElement).closest(".widget")) event.preventDefault();
+        if (!layoutEditing) return;
+        const target = (event.target as HTMLElement).closest(".widget") as HTMLElement | null;
+        if (!target) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        document.querySelectorAll(".home-widgets .widget.is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
+        target.classList.add("is-drop-target");
       }}
       onDrop={(event) => {
+        if (!layoutEditing) return;
         const target = (event.target as HTMLElement).closest(".widget") as HTMLElement | null;
         if (!target) return;
         event.preventDefault();
         reorderWidget(event.dataTransfer.getData("text/whytab-widget") as WidgetKey, target.dataset.widgetKey as WidgetKey | undefined);
+        document.querySelectorAll(".home-widgets .widget.is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
+      }}
+      onDragEndCapture={() => {
+        document.querySelectorAll(".home-widgets .widget.is-dragging, .home-widgets .widget.is-drop-target").forEach((node) => {
+          node.classList.remove("is-dragging", "is-drop-target");
+        });
       }}
     >
       {widgetOrder.map((key) => state.settings.widgets[key] ? widgetRenderers[key] : null)}
@@ -1485,16 +1659,30 @@ export default function App() {
               <CalendarDays size={21} />
               <span>主页</span>
             </button>
-            <button className={activePage === "shortcuts" ? "active" : ""} onClick={() => goToPage("shortcuts")} title="网站导航">
-              <Layers size={21} />
-              <span>网站</span>
-            </button>
-            <button className={activePage === "tools" ? "active" : ""} onClick={() => goToPage("tools")} title="工具箱">
-              <BookOpen size={21} />
-              <span>工具</span>
-            </button>
+            {!hiddenNavPages.has("shortcuts") && (
+              <button className={activePage === "shortcuts" && !activeCustomPageId ? "active" : ""} onClick={() => goToPage("shortcuts")} title="网站导航">
+                <Layers size={21} />
+                <span>网站</span>
+              </button>
+            )}
+            {!hiddenNavPages.has("tools") && (
+              <button className={activePage === "tools" ? "active" : ""} onClick={() => goToPage("tools")} title="工具箱">
+                <BookOpen size={21} />
+                <span>工具</span>
+              </button>
+            )}
+            {customNavPages.map((page) => {
+              const CustomPageIcon = customNavPageIcons[page.icon]?.Icon || Star;
+              return (
+                <button className={activeCustomPageId === page.id ? "active" : ""} onClick={() => goToCustomPage(page)} title={page.name} key={page.id}>
+                  <CustomPageIcon size={21} />
+                  <span>{page.name}</span>
+                </button>
+              );
+            })}
           </div>
           <div className="page-nav-secondary">
+            <button onClick={() => setDialog("pages")} title="管理页面" aria-label="管理页面"><Plus size={18} /></button>
             <button onClick={() => setDialog("settings")} title="设置"><Settings size={18} /></button>
           </div>
         </nav>
@@ -1502,14 +1690,7 @@ export default function App() {
         {activePage === "shortcuts" && state.settings.dockPosition === "top" && <Dock shortcuts={pinned} />}
 
         <section
-          className={["workspace", "page-" + activePage, pageMotion ? "page-motion-" + pageMotion : ""].filter(Boolean).join(" ")}
-          onMouseDown={(event) => {
-            if (activePage !== "widgets" || event.button !== 2) return;
-            const target = event.target as HTMLElement;
-            if (target.closest("input") || target.closest("select") || target.closest("textarea")) return;
-            const widget = target.closest(".widget") as HTMLElement | null;
-            openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
-          }}
+          className={["workspace", "page-" + activePage, activeCustomPageId ? "page-custom" : "", pageMotion ? "page-motion-" + pageMotion : ""].filter(Boolean).join(" ")}
           onContextMenu={(event) => {
             const target = event.target as HTMLElement;
             if (activePage === "widgets") {
@@ -1525,30 +1706,29 @@ export default function App() {
         >
           {activePage === "widgets" ? (
             <section className="home-dashboard">
-              <div className="home-head">
-                <div>
-                  <h2>主页</h2>
-                  <p>搜索和常用入口</p>
-                </div>
-                <div className="home-actions">
-                  <button
-                    className={`text-button mobile-only-action ${touchArrangeWidgets ? "active" : ""}`}
-                    onClick={() => {
-                      setTouchArrangeWidgets((current) => !current);
-                      setTouchWidgetKey(undefined);
-                      showToast(touchArrangeWidgets ? "已完成小组件整理" : "点一个组件，再点目标位置");
-                    }}
-                  >
-                    <GripVertical size={16} />
-                    {touchArrangeWidgets ? "完成整理" : "整理组件"}
-                  </button>
-                  <button className="text-button" onClick={() => setDialog("library")}><Palette size={16} /> 资源中心</button>
-                  <button className="text-button" onClick={() => void refreshExternalData(state, true)}><RefreshCcw size={16} /> 刷新数据</button>
-                </div>
+              <div className="dashboard-toolbar" role="toolbar" aria-label="主页工具">
+                <button
+                  type="button"
+                  className={`dashboard-tool ${layoutEditing ? "active" : ""}`}
+                  aria-label={layoutEditing ? "完成布局编辑" : "编辑主页布局"}
+                  title={layoutEditing ? "完成布局编辑" : "编辑主页布局"}
+                  onClick={() => {
+                    const next = !layoutEditing;
+                    setLayoutEditing(next);
+                    setTouchWidgetKey(undefined);
+                    showToast(next ? "布局编辑已开启：拖动项目，手机可点选后移动" : "主页布局已保存");
+                  }}
+                >
+                  {layoutEditing ? <Check size={17} /> : <GripVertical size={17} />}
+                </button>
+                <button type="button" className="dashboard-tool" aria-label="添加网站" title="添加网站" onClick={() => openNewShortcut()}><Plus size={17} /></button>
+                <button type="button" className="dashboard-tool" aria-label="资源中心" title="资源中心" onClick={() => setDialog("library")}><Palette size={17} /></button>
+                <button type="button" className="dashboard-tool" aria-label="刷新数据" title="刷新数据" onClick={() => void refreshExternalData(state, true)}><RefreshCcw size={17} /></button>
               </div>
               <HomeShortcuts
                 tiles={homeShortcutTiles}
                 iconSize={state.settings.iconSize}
+                editing={layoutEditing}
                 onOpenFolder={(folderId) => setOpenFolderId(folderId)}
                 onShortcutMenu={(event, shortcut) => {
                   event.preventDefault();
@@ -1585,6 +1765,34 @@ export default function App() {
                 setPageMenu({ x: event.clientX, y: event.clientY });
               }}
             >
+              <header className="shortcut-stage-head">
+                <div className="shortcut-stage-title">
+                  <span>{activeCustomNavPage ? (() => {
+                    const ActivePageIcon = customNavPageIcons[activeCustomNavPage.icon]?.Icon || Star;
+                    return <ActivePageIcon size={19} />;
+                  })() : <Layers size={19} />}</span>
+                  <div>
+                    <h2>{activeCustomNavPage?.name || activeLayerName}</h2>
+                    <p>{shortcutTiles.length} 个入口</p>
+                  </div>
+                </div>
+                <div className="shortcut-stage-actions">
+                  <button type="button" title="添加网站" aria-label="添加网站" onClick={() => openNewShortcut(activeCustomNavPage?.groupId)}><Plus size={17} /></button>
+                  <button type="button" title="新建文件夹" aria-label="新建文件夹" onClick={() => openNewFolder(activeCustomNavPage?.groupId)}><FolderPlus size={17} /></button>
+                  <button type="button" title="管理页面" aria-label="管理页面" onClick={() => setDialog("pages")}><Settings size={17} /></button>
+                </div>
+              </header>
+              {!activeCustomNavPage && (
+                <LayerRail
+                  activeLayer={activeLayer}
+                  groups={groups}
+                  shortcuts={allShortcuts}
+                  onSelect={setActiveLayer}
+                  onAddGroup={addGroup}
+                  onRenameGroup={renameGroup}
+                  onDeleteGroup={deleteGroup}
+                />
+              )}
               <section className="shortcuts-panel" style={{ "--glass": state.settings.glass / 100 } as React.CSSProperties}>
                 <div className={"shortcut-grid " + state.settings.gridDensity} style={{ "--icon": state.settings.iconSize + "px" } as React.CSSProperties}>
                   {shortcutTiles.map((item) => {
@@ -1637,7 +1845,7 @@ export default function App() {
                     );
                   })}
                   {!shortcuts.length && !visibleFolders.length && (
-                    <button className="empty-shortcut" onClick={() => setDialog("shortcut")}><Plus size={22} /> 添加网站</button>
+                    <button className="empty-shortcut" onClick={() => openNewShortcut(activeCustomNavPage?.groupId)}><Plus size={22} /> 添加网站</button>
                   )}
                 </div>
               </section>
@@ -1662,8 +1870,8 @@ export default function App() {
         <PageContextMenu
           menu={pageMenu}
           onClose={() => setPageMenu(null)}
-          onAddFolder={() => { setDialog("folder"); setPageMenu(null); }}
-          onAddShortcut={() => { setDialog("shortcut"); setPageMenu(null); }}
+          onAddFolder={() => { openNewFolder(activeCustomNavPage?.groupId); setPageMenu(null); }}
+          onAddShortcut={() => { openNewShortcut(activeCustomNavPage?.groupId); setPageMenu(null); }}
           onAddGroup={() => { addGroup(); setPageMenu(null); }}
           onSettings={() => { setDialog("library"); setPageMenu(null); }}
         />
@@ -1773,6 +1981,17 @@ export default function App() {
             setEditingShortcut(shortcut);
             setDialog("shortcut");
           }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === "pages" && (
+        <PageManagerDialog
+          customPages={customNavPages}
+          hiddenPages={hiddenNavPages}
+          onAdd={addCustomNavPage}
+          onDelete={deleteCustomNavPage}
+          onToggleSystem={toggleSystemNavPage}
+          onOpenPage={(page) => { goToCustomPage(page); setDialog(null); }}
           onClose={() => setDialog(null)}
         />
       )}
@@ -1938,15 +2157,15 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
   );
 }
 
-function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTile }: {
+function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu, onMoveTile }: {
   tiles: Array<{ kind: "folder"; folder: ShortcutFolder; order: number } | { kind: "shortcut"; shortcut: Shortcut; order: number }>;
   iconSize: number;
+  editing: boolean;
   onOpenFolder: (folderId: string) => void;
   onShortcutMenu: (event: MouseEvent, shortcut: Shortcut) => void;
   onMoveTile: (source?: HomeTileRef | string, target?: HomeTileRef | string) => void;
 }) {
   const [draggingKey, setDraggingKey] = useState<HomeTileRef | undefined>();
-  const [touchArranging, setTouchArranging] = useState(false);
   const [touchSource, setTouchSource] = useState<HomeTileRef | undefined>();
   const [dropKey, setDropKey] = useState<HomeTileRef | undefined>();
   const tileKey = (item: { kind: "folder"; folder: ShortcutFolder } | { kind: "shortcut"; shortcut: Shortcut }): HomeTileRef => (
@@ -2005,22 +2224,14 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
     if (touchSource !== key) onMoveTile(touchSource, key);
     setTouchSource(undefined);
   };
+  useEffect(() => {
+    if (editing) return;
+    setTouchSource(undefined);
+    endDrag();
+  }, [editing]);
   if (tiles.length === 0) return null;
   return (
-    <section className={`home-shortcuts ${draggingKey ? "is-arranging" : ""} ${touchArranging ? "touch-arranging" : ""}`} aria-label="主页快捷入口">
-      <div className="mobile-shortcut-toolbar">
-        <span>{touchSource ? "已选中，点目标位置" : "点选图标调整位置"}</span>
-        <button
-          type="button"
-          className={touchArranging ? "active" : ""}
-          onClick={() => {
-            setTouchArranging((current) => !current);
-            setTouchSource(undefined);
-          }}
-        >
-          {touchArranging ? "完成" : "整理"}
-        </button>
-      </div>
+    <section className={`home-shortcuts ${draggingKey ? "is-arranging" : ""} ${editing ? "layout-editing touch-arranging" : ""}`} aria-label="主页快捷入口">
       <div className="home-shortcuts-row" style={{ "--icon": Math.max(48, Math.min(iconSize, 80)) + "px" } as React.CSSProperties}>
         {tiles.map((item) => {
           const key = tileKey(item);
@@ -2030,14 +2241,14 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
             className={tileClass("home-shortcut folder-home", key)}
             key={"folder-" + item.folder.id}
             onClick={() => {
-              if (touchArranging) {
+              if (editing) {
                 chooseTouchTarget(key);
                 return;
               }
               onOpenFolder(item.folder.id);
             }}
             title={item.folder.name}
-            draggable
+            draggable={editing}
             onDragStart={(event) => startDrag(event, key)}
             onDragEnd={endDrag}
             onDragEnter={(event) => overTile(event, key)}
@@ -2049,6 +2260,7 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
               {item.folder.iconUrl ? <img src={item.folder.iconUrl} alt="" /> : <Folder size={Math.round(Math.max(48, Math.min(iconSize, 80)) * 0.46)} />}
             </span>
             <span>{item.folder.name}</span>
+            {editing && <span className="tile-drag-handle" aria-hidden="true"><GripVertical size={14} /></span>}
           </button>
         ) : (
           <a
@@ -2059,13 +2271,13 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
             target="_blank"
             rel="noreferrer"
             onClick={(event) => {
-              if (!touchArranging) return;
+              if (!editing) return;
               event.preventDefault();
               event.stopPropagation();
               chooseTouchTarget(key);
             }}
             onContextMenu={(event) => onShortcutMenu(event, item.shortcut)}
-            draggable
+            draggable={editing}
             onDragStart={(event) => startDrag(event, key)}
             onDragEnd={endDrag}
             onDragEnter={(event) => overTile(event, key)}
@@ -2074,9 +2286,10 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
             onDrop={(event) => dropTile(event, key)}
           >
             <span className="shortcut-icon" style={{ backgroundColor: item.shortcut.iconColor }}>
-              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} fallback={item.shortcut.title.slice(0, 1)} />
+              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} fallback={item.shortcut.title.slice(0, 1)} priority />
             </span>
             <span>{item.shortcut.title}</span>
+            {editing && <span className="tile-drag-handle" aria-hidden="true"><GripVertical size={14} /></span>}
           </a>
         )})}
       </div>
@@ -2097,6 +2310,11 @@ function Dock({ shortcuts }: { shortcuts: Shortcut[] }) {
   );
 }
 
+const contextMenuPosition = (x: number, y: number, width: number, height: number) => ({
+  left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
+  top: Math.max(8, Math.min(y, window.innerHeight - height - 8))
+});
+
 function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete }: {
   menu: Exclude<ShortcutMenuState, null>;
   shortcut?: Shortcut;
@@ -2116,10 +2334,9 @@ function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete 
   }, [onClose]);
 
   if (!shortcut) return null;
-  const left = Math.min(menu.x, window.innerWidth - 188);
-  const top = Math.min(menu.y, window.innerHeight - 188);
+  const position = contextMenuPosition(menu.x, menu.y, 188, 188);
   return (
-    <div className="shortcut-menu" style={{ left, top }} onClick={(event) => event.stopPropagation()}>
+    <div className="shortcut-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
       <a href={shortcut.url} target="_blank" rel="noreferrer">打开新标签页</a>
       <button onClick={() => onPin(shortcut.id)}><Pin size={14} /> {shortcut.pinned ? "从主页移除" : "放到主页"}</button>
       <button onClick={() => onEdit(shortcut)}><Edit3 size={14} /> 编辑图标</button>
@@ -2145,10 +2362,9 @@ function PageContextMenu({ menu, onClose, onAddFolder, onAddShortcut, onAddGroup
       window.removeEventListener("blur", close);
     };
   }, [onClose]);
-  const left = Math.min(menu.x, window.innerWidth - 220);
-  const top = Math.min(menu.y, window.innerHeight - 260);
+  const position = contextMenuPosition(menu.x, menu.y, 220, 260);
   return (
-    <div className="shortcut-menu page-menu" style={{ left, top }} onClick={(event) => event.stopPropagation()}>
+    <div className="shortcut-menu page-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
       <button onClick={onAddShortcut}><Plus size={14} /> 添加网站</button>
       <button onClick={onAddFolder}><FolderPlus size={14} /> 新建文件夹</button>
       <button onClick={onAddGroup}><Layers size={14} /> 新建分类</button>
@@ -2174,11 +2390,10 @@ function WidgetContextMenu({ menu, onClose, onOpenLibrary, onRefresh, onRotateWa
       window.removeEventListener("blur", close);
     };
   }, [onClose]);
-  const left = Math.min(menu.x, window.innerWidth - 236);
-  const top = Math.min(menu.y, window.innerHeight - 250);
+  const position = contextMenuPosition(menu.x, menu.y, 236, 250);
   const widgetName = menu.widgetKey ? widgetNames[menu.widgetKey] : "主页";
   return (
-    <div className="shortcut-menu page-menu widget-menu" style={{ left, top }} onClick={(event) => event.stopPropagation()}>
+    <div className="shortcut-menu page-menu widget-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
       <strong>{widgetName}</strong>
       <button onClick={onOpenLibrary}><Palette size={14} /> 小组件库与外观</button>
       <button onClick={onRefresh}><RefreshCcw size={14} /> 刷新数据</button>
@@ -2232,6 +2447,8 @@ function LayerRail({ activeLayer, groups, shortcuts, onSelect, onAddGroup, onRen
 }
 
 function Widget({ title, action, children, tone = "default", size = "medium", widgetKey }: { title: string; action?: React.ReactNode; children: React.ReactNode; tone?: string; size?: WidgetSize; widgetKey?: WidgetKey }) {
+  const widgetMeta = widgetKey ? widgetLibraryMeta[widgetKey] : undefined;
+  const WidgetIcon = widgetMeta?.Icon;
   return (
     <section
       className={`widget widget-${tone} widget-size-${size}`}
@@ -2245,6 +2462,10 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
       }}
       onDragStart={(event) => {
         const target = event.target as HTMLElement;
+        if (!event.currentTarget.closest(".layout-editing")) {
+          event.preventDefault();
+          return;
+        }
         if (target.closest("button") || target.closest("input") || target.closest("select") || target.closest("textarea") || target.closest("a") || target.closest("label")) {
           event.preventDefault();
           return;
@@ -2252,14 +2473,25 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
         if (widgetKey) {
           event.dataTransfer.setData("text/whytab-widget", widgetKey);
           event.dataTransfer.effectAllowed = "move";
+          event.currentTarget.classList.add("is-dragging");
         }
       }}
+      onDragEnd={(event) => event.currentTarget.classList.remove("is-dragging")}
     >
       <div className="widget-title">
-        <h3>{title}</h3>
-        {action}
+        <div className="widget-heading">
+          {WidgetIcon && <span className="widget-symbol"><WidgetIcon size={17} /></span>}
+          <span className="widget-heading-copy">
+            <h3>{title}</h3>
+            {widgetKey && <small>{widgetDescriptions[widgetKey]}</small>}
+          </span>
+        </div>
+        <div className="widget-actions">
+          {action}
+          {widgetKey && <span className="widget-drag-handle" title="拖动小组件" aria-hidden="true"><GripVertical size={15} /></span>}
+        </div>
       </div>
-      {children}
+      <div className="widget-content">{children}</div>
     </section>
   );
 }
@@ -3299,6 +3531,87 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
           </div>
         </div>
       )}
+    </DialogShell>
+  );
+}
+
+function PageManagerDialog({ customPages, hiddenPages, onAdd, onDelete, onToggleSystem, onOpenPage, onClose }: {
+  customPages: CustomNavPage[];
+  hiddenPages: Set<"shortcuts" | "tools">;
+  onAdd: (name: string, icon: CustomNavPageIcon) => void;
+  onDelete: (page: CustomNavPage) => void;
+  onToggleSystem: (page: "shortcuts" | "tools") => void;
+  onOpenPage: (page: CustomNavPage) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState<CustomNavPageIcon>("star");
+  const createPage = () => {
+    if (!name.trim()) return;
+    onAdd(name, icon);
+  };
+  const systemPages = [
+    { id: "widgets" as const, name: "主页", Icon: CalendarDays, locked: true },
+    { id: "shortcuts" as const, name: "网站", Icon: Layers, locked: false },
+    { id: "tools" as const, name: "工具", Icon: BookOpen, locked: false }
+  ];
+
+  return (
+    <DialogShell title="页面管理" onClose={onClose} className="page-manager-dialog">
+      <section className="page-manager-list" aria-label="系统页面">
+        <div className="page-manager-section-title">系统页面</div>
+        {systemPages.map((page) => {
+          const hidden = page.id !== "widgets" && hiddenPages.has(page.id);
+          const SystemPageIcon = page.Icon;
+          return (
+            <div className={`page-manager-row ${hidden ? "is-hidden" : ""}`} key={page.id}>
+              <span className="page-manager-icon"><SystemPageIcon size={18} /></span>
+              <span className="page-manager-name"><strong>{page.name}</strong><small>{page.locked ? "固定" : hidden ? "已隐藏" : "显示中"}</small></span>
+              {page.id === "widgets" ? <span className="page-manager-locked"><Pin size={14} /></span> : (
+                <button type="button" title={hidden ? `显示${page.name}` : `隐藏${page.name}`} onClick={() => onToggleSystem(page.id)}>
+                  {hidden ? <Plus size={16} /> : <EyeOff size={16} />}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="page-manager-list" aria-label="自定义页面">
+        <div className="page-manager-section-title">我的页面</div>
+        {customPages.map((page) => {
+          const PageIcon = customNavPageIcons[page.icon]?.Icon || Star;
+          return (
+            <div className="page-manager-row" key={page.id}>
+              <button type="button" className="page-manager-main" onClick={() => onOpenPage(page)}>
+                <span className="page-manager-icon"><PageIcon size={18} /></span>
+                <span className="page-manager-name"><strong>{page.name}</strong><small>打开页面</small></span>
+              </button>
+              <button type="button" className="page-manager-delete" title={`删除${page.name}页面`} onClick={() => onDelete(page)}><Trash2 size={16} /></button>
+            </div>
+          );
+        })}
+        {!customPages.length && <p className="page-manager-empty">还没有自定义页面</p>}
+      </section>
+
+      <form className="page-create-form" onSubmit={(event) => { event.preventDefault(); createPage(); }}>
+        <label>
+          <span>新页面名称</span>
+          <input value={name} maxLength={12} onChange={(event) => setName(event.target.value)} placeholder="例如：工作" autoFocus />
+        </label>
+        <div className="page-icon-picker" role="radiogroup" aria-label="页面图标">
+          {(Object.entries(customNavPageIcons) as Array<[CustomNavPageIcon, (typeof customNavPageIcons)[CustomNavPageIcon]]>).map(([key, meta]) => {
+            const Icon = meta.Icon;
+            return (
+              <button type="button" role="radio" aria-checked={icon === key} className={icon === key ? "active" : ""} title={meta.label} onClick={() => setIcon(key)} key={key}>
+                <Icon size={18} />
+              </button>
+            );
+          })}
+        </div>
+        <button type="submit" className="primary" disabled={!name.trim()}><Plus size={16} /> 新建页面</button>
+      </form>
+      <p className="page-manager-safety">删除页面只会移除导航入口，页面内的网站仍保留在“网站”分类中。</p>
     </DialogShell>
   );
 }

@@ -4,6 +4,8 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
+Current release: **0.2.1**. See the [bilingual release notes](docs/releases/0.2.1.md).
+
 ## Product and Framework
 
 whytab is both a ready-to-use product and an open-source configurable framework.
@@ -16,6 +18,8 @@ whytab is both a ready-to-use product and an open-source configurable framework.
 - Local-first data: shortcuts, widgets, todos, notes, countdowns, settings, and layout are stored in the browser's IndexedDB.
 - Optional cloud sync: users can register or sign in with email and password to sync across devices.
 - User data isolation: cloud data is protected by Supabase Auth and Row Level Security.
+- Editable home workspace: enable layout editing to reorder shortcuts and widgets without changing their data.
+- Personal pages: add pages to the left navigation, assign shortcut groups to them, or hide optional built-in pages.
 - Cross-platform usage: works on macOS, Windows, iOS, iPadOS, Android, and other modern browsers depending on extension/PWA support.
 - Import and backup: supports whytab JSON, browser bookmarks HTML, CSV, and old new-tab page migration input.
 - Private by default on each device: the app remains usable offline and does not require sign-in for local use.
@@ -88,6 +92,15 @@ https://why-tool.com/
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
 
+### 0.2.1 界面与布局
+
+- 首页改为更清晰的工作台排版，统一图标、文字、小组件标题和操作按钮，避免图标与文字重叠。
+- 点击首页的“编辑布局”按钮后，可以重新排列常用图标和小组件；触屏设备使用先选中、再选择目标位置的方式，降低误拖动风险。
+- 左侧导航支持创建个人页面，每个页面对应一个快捷方式分组，可用于区分工作、学习、生活等场景。
+- “网站”和“工具”页面可以隐藏或恢复；“主页”始终保留，避免用户误删主要入口。
+- 删除个人页面只会删除导航入口，不会删除对应分组和其中的网站，防止误操作造成数据丢失。
+- 12 个小组件采用统一视觉结构，并针对桌面、平板和手机分别调整布局。
+
 ## 产品与框架定位
 
 whytab 同时提供两种使用方式：
@@ -119,6 +132,7 @@ The browser extension replaces the new tab page where the browser supports `chro
 - Groups and folders
 - Dock-pinned shortcuts
 - Add, edit, delete, and reorder shortcuts
+- Reorder homepage shortcuts in layout editing mode; touch devices use a deliberate two-step selection to avoid accidental moves
 - Automatic favicon matching
 - Custom icon URL and icon color
 - Search/filter shortcuts
@@ -132,10 +146,20 @@ The browser extension replaces the new tab page where the browser supports `chro
 - To Do
 - Notes
 - Exchange rates
+- Daily quote
+- Focus timer
 - World clock
+- Quick memo
 - Year progress
 - Calculator
-- Photo widget
+- Reorder widgets in layout editing mode with responsive desktop, tablet, and phone layouts
+
+### Pages and Navigation
+
+- Home, Websites, and Tools built-in pages
+- User-created navigation pages backed by shortcut groups
+- Optional hiding of Websites and Tools while Home remains protected
+- Deleting a custom navigation page keeps its shortcut group and websites, preventing accidental data loss
 
 ### Appearance
 

@@ -63,6 +63,17 @@ export type Countdown = {
 export type WidgetKey = "weather" | "calendar" | "countdowns" | "todos" | "notes" | "rates" | "quote" | "focus" | "clock" | "memo" | "year" | "calculator";
 export type WidgetSize = "small" | "medium" | "wide";
 
+export type CustomNavPageIcon = "star" | "briefcase" | "book" | "code" | "heart" | "plane";
+
+export type CustomNavPage = {
+  id: Id;
+  name: string;
+  groupId: Id;
+  icon: CustomNavPageIcon;
+  order: number;
+  updatedAt: string;
+};
+
 export type CustomWallpaper = {
   id: string;
   name: string;
@@ -97,6 +108,8 @@ export type Settings = {
   widgets: Record<WidgetKey, boolean>;
   widgetOrder?: WidgetKey[];
   widgetSizes?: Record<WidgetKey, WidgetSize>;
+  customNavPages?: CustomNavPage[];
+  hiddenNavPages?: Array<"shortcuts" | "tools">;
   timeZone?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
