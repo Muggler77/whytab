@@ -39,5 +39,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 const canUseWebAppCache = window.location.protocol === "https:"
   || ["localhost", "127.0.0.1"].includes(window.location.hostname);
 if (canUseWebAppCache && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => void navigator.serviceWorker.register("./sw.js").catch(() => undefined));
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker
+      .register("./sw.js")
+      .then((registration) => registration.update())
+      .catch(() => undefined);
+  });
 }
