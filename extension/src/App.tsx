@@ -493,18 +493,47 @@ export default function App() {
     }
   });
 
+  const hasPortableLocalData = (target: AppState) => {
+    const visible = <T extends { deletedAt?: string }>(items: T[]) => items.filter((item) => !item.deletedAt);
+    const userNotes = visible(target.notes).filter((note) => note.title !== "随手笔记" || note.body !== "记录临时想法、链接或待整理的信息。");
+    const userTodos = visible(target.todos).filter((todo) => todo.text !== "添加常用网站快捷方式" || todo.done);
+    const userCountdowns = visible(target.countdowns).filter((countdown) => countdown.title !== "重要日期");
+    return visible(target.shortcuts).length > 0
+      || visible(target.shortcutFolders).length > 0
+      || visible(target.shortcutGroups).some((group) => group.id !== "default" || group.name !== "常用")
+      || userNotes.length > 0
+      || userTodos.length > 0
+      || userCountdowns.length > 0
+      || Boolean(target.settings.quickNote?.trim())
+      || Boolean(target.settings.photoFrameImage)
+      || Boolean(target.settings.wallpaper)
+      || Boolean(target.settings.customWallpapers?.length)
+      || Boolean(Object.keys(target.settings.calendarRecords || {}).length);
+  };
+
+  const portableAnonymousState = (target: AppState) => ({
+    ...target,
+    todos: target.todos.filter((todo) => todo.deletedAt || todo.text !== "添加常用网站快捷方式" || todo.done),
+    notes: target.notes.filter((note) => note.deletedAt || note.title !== "随手笔记" || note.body !== "记录临时想法、链接或待整理的信息。"),
+    countdowns: target.countdowns.filter((countdown) => countdown.deletedAt || countdown.title !== "重要日期")
+  });
+
   const activateSignedInUser = async (user: NonNullable<SyncStatus["user"]>, reason = "正在加载账号数据") => {
+    const wasAnonymousSession = !activeUserIdRef.current;
+    const anonymousState = wasAnonymousSession ? portableAnonymousState(normalizeState(withCurrentServiceConfig(stateRef.current))) : undefined;
+    const shouldCarryAnonymousData = Boolean(anonymousState && hasPortableLocalData(anonymousState));
     activeUserIdRef.current = user.id;
     setSync((old) => ({ ...old, user, syncing: true, message: reason }));
 
     try {
       const local = await loadStateForAccount(user.id);
       let next = normalizeState(withCurrentServiceConfig(local.state));
+      if (anonymousState && shouldCarryAnonymousData) next = mergeRemote(next, anonymousState);
       const remote = await pullSnapshot(next);
 
       if (remote) {
         const normalizedRemote = normalizeState(remote);
-        if (local.existed) {
+        if (local.existed || shouldCarryAnonymousData) {
           next = mergeRemote(next, normalizedRemote);
           await pushSnapshot(next);
           next = markPushed(next);
@@ -529,9 +558,10 @@ export default function App() {
         user,
         syncing: false,
         autoSync: next.sync?.autoSync,
-        message: `已登录 ${user.email}`,
+        message: shouldCarryAnonymousData ? `已登录 ${user.email}，已合并本机未登录数据` : `已登录 ${user.email}`,
         lastSyncedAt: next.sync?.lastPushedAt || next.sync?.lastPulledAt || nowIso()
       });
+      if (shouldCarryAnonymousData) showToast("已把未登录时的本机数据合并到当前账号");
       return next;
     } catch (error) {
       setSync((old) => ({
@@ -3524,7 +3554,11 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
               />
             </div>
           </label>
-          <p className="sync-auth-note">{authMode === "login" ? "使用同一个账号登录其他设备，即可合并同步你的 whytab 数据。" : "注册后会使用当前邮箱作为同步账号，之后可直接在其他设备登录。"}</p>
+          <p className="sync-auth-note">
+            {authMode === "login"
+              ? "使用同一个账号登录其他设备，即可合并同步你的 whytab 数据。未登录时在本机整理的内容也会自动带入当前账号。"
+              : "注册后会使用当前邮箱作为同步账号，未登录时在本机整理的内容会自动带入账号。"}
+          </p>
           {notice && <p className="sync-auth-success">{notice}</p>}
           {error && <p className="warning">{error}</p>}
           <button className="primary sync-submit" disabled={busy || !email || !password} onClick={() => submit(authMode)}>

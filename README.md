@@ -68,6 +68,7 @@ Sign-in is optional.
 - You can use whytab without an account. Your data stays in the current browser profile.
 - To sync across devices, open the account/sync panel and register with email and password.
 - Use the same account on another device to sync shortcuts, widgets, notes, todos, countdowns, settings, and layout.
+- If you created data before signing in, whytab keeps it locally and carries it into your account when you sign in.
 - Public users only need an email and password. They do not need to prepare a backend, service address, API key, access key, or advanced connection setting.
 - Keep a JSON export backup when moving browsers or resetting a device.
 
@@ -84,6 +85,7 @@ https://why-tool.com/
 - 插件安装方式：下载 GitHub 源码，运行 `npm install` 和 `npm run build`，然后在浏览器扩展管理页选择“加载已解压的扩展程序”，加载 `extension/dist`。
 - 不登录也可以用：数据默认保存在本机浏览器 IndexedDB。
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
+- 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
 
 ## 产品与框架定位

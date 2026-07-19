@@ -72,7 +72,7 @@ try {
   const backup = createStateBackup("测试备份", legacyState);
   assert.equal(backup.state.shortcuts[0].url, "https://openai.com", "manual backup must preserve shortcuts");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.1.5" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.1.6" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
