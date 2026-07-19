@@ -1,7 +1,7 @@
 {
   "name": "whytab",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "whytab browser new tab extension workspace",
   "scripts": {
     "dev": "npm --workspace extension run dev",

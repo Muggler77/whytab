@@ -85,9 +85,11 @@ type HomePage = "widgets" | "shortcuts" | "tools";
 type HomeTileRef = `shortcut:${string}` | `folder:${string}`;
 type SyncMode = "merge" | "push" | "pull";
 type AuthResult = { status: "signed-in" | "verification-sent"; message: string };
+type ToastAction = { label: string; onClick: () => void };
 
 const SYNC_RESTORE_KEY = "sync-restore-point";
 const PUBLIC_AUTH_REDIRECT_URL = "https://why-tool.com/";
+const HOSTED_APP_ORIGIN = "https://why-tool.com";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
@@ -446,6 +448,7 @@ export default function App() {
   const [sync, setSync] = useState<SyncStatus>({ message: "未登录", syncing: false });
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult>({ status: "idle" });
   const [toast, setToast] = useState("");
+  const [toastAction, setToastAction] = useState<ToastAction | undefined>();
   const [undoLabel, setUndoLabel] = useState("");
   const [restoreAvailable, setRestoreAvailable] = useState(false);
   const [migrationBackupAvailable, setMigrationBackupAvailable] = useState(false);
@@ -456,10 +459,17 @@ export default function App() {
   const undoSnapshotRef = useRef<AppState | undefined>();
   const lastSyncedUpdatedAtRef = useRef<string | undefined>();
   const wheelPageLockRef = useRef(0);
+  const toastTimerRef = useRef<number | undefined>();
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 700px)");
@@ -610,6 +620,7 @@ export default function App() {
     setUndoLabel("");
     applyState(restored);
     setToast("已撤销");
+    setToastAction(undefined);
     window.setTimeout(() => setToast(""), 1800);
   };
 
@@ -666,13 +677,24 @@ export default function App() {
     setUpdateCheck((old) => ({ status: "checking", checkedAt: old.checkedAt }));
     const result = await checkForUpdate();
     setUpdateCheck(result);
+    const canRefreshHostedApp = window.location.origin === HOSTED_APP_ORIGIN;
+    const refreshAction = canRefreshHostedApp
+      ? { label: "刷新更新", onClick: () => window.location.reload() }
+      : undefined;
     if (feedback) {
-      if (result.status === "available") showToast(result.critical ? "发现重要更新，请尽快升级" : "发现新版本");
+      if (result.status === "available") {
+        showToast(
+          result.critical ? `发现重要更新 ${result.manifest.latestVersion}，刷新后生效` : `发现新版本 ${result.manifest.latestVersion}，刷新后生效`,
+          refreshAction
+        );
+      }
       if (result.status === "current") showToast("当前已是最新版本");
-      if (result.status === "unsupported") showToast("当前版本过旧，请先升级");
+      if (result.status === "unsupported") showToast("当前版本过旧，请先升级", refreshAction);
       if (result.status === "error") showToast(result.message);
+    } else if (result.status === "available" && canRefreshHostedApp) {
+      showToast(`新版本 ${result.manifest.latestVersion} 已准备好`, refreshAction);
     } else if (result.status === "available" && result.critical) {
-      showToast("发现重要更新，请尽快升级");
+      showToast(`发现重要更新 ${result.manifest.latestVersion}`);
     }
   }, []);
 
@@ -1101,9 +1123,14 @@ export default function App() {
     showToast(`已导出 ${rows.length} 个快捷导航，包含分组和文件夹`);
   };
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, action?: ToastAction) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
+    setToastAction(action);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast("");
+      setToastAction(undefined);
+    }, action ? 10000 : 2400);
   };
 
   const currentSearchEngine = state.settings.searchEngine || "baidu";
@@ -1789,6 +1816,7 @@ export default function App() {
       {toast && (
         <div className="toast">
           <span>{toast}</span>
+          {toastAction && <button type="button" onClick={toastAction.onClick}>{toastAction.label}</button>}
           {undoSnapshotRef.current && undoLabel && <button type="button" onClick={undoLastChange}>撤销</button>}
         </div>
       )}
