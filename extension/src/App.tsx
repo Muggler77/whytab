@@ -91,6 +91,7 @@ const PUBLIC_AUTH_REDIRECT_URL = "https://why-tool.com/";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const ICON_LOAD_TIMEOUT_MS = 2200;
 
 const isFreshCache = (updatedAt?: string, maxAge = WEATHER_CACHE_MAX_AGE_MS) => {
   if (!updatedAt) return false;
@@ -241,9 +242,47 @@ function ShortcutIconContent({ url, iconUrl, fallback = "" }: { url: string; ico
 function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "" }: { url: string; iconUrl?: string; alt?: string; fallback?: string }) {
   const candidates = useMemo(() => iconCandidatesFor(url, iconUrl), [url, iconUrl]);
   const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [candidates.join("|")]);
-  if (!candidates.length || index >= candidates.length) return <>{fallback}</>;
-  return <img src={candidates[index]} alt={alt} onError={() => setIndex((value) => value + 1)} />;
+  const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
+  const candidateKey = candidates.join("|");
+  const current = candidates[index];
+
+  useEffect(() => {
+    setIndex(0);
+    setLoaded(false);
+    loadedRef.current = false;
+  }, [candidateKey]);
+
+  useEffect(() => {
+    if (!current) return undefined;
+    setLoaded(false);
+    loadedRef.current = false;
+    const timeout = window.setTimeout(() => {
+      if (!loadedRef.current) setIndex((value) => value + 1);
+    }, ICON_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [current]);
+
+  const fallbackText = fallback || "网";
+  if (!current || index >= candidates.length) return <span className="shortcut-icon-fallback">{fallbackText}</span>;
+  return (
+    <>
+      <span className="shortcut-icon-fallback" aria-hidden={loaded}>{fallbackText}</span>
+      <img
+        className={`shortcut-icon-image ${loaded ? "is-loaded" : ""}`}
+        src={current}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onLoad={() => {
+          loadedRef.current = true;
+          setLoaded(true);
+        }}
+        onError={() => setIndex((value) => value + 1)}
+      />
+    </>
+  );
 }
 
 function IconChoicePreview({ src, fallback }: { src: string; fallback: string }) {
@@ -280,18 +319,20 @@ const dailyQuotes = [
   { text: "少一点入口焦虑，多一点顺手抵达。", source: "whytab" }
 ];
 
-const featuredWallpapers = [
-  { id: "coastal-glass", name: "冷雾海岸", url: "/wallpapers/photo/coastal-glass.jpg" },
-  { id: "neon-rain", name: "雨夜霓虹", url: "/wallpapers/photo/neon-rain.jpg" },
-  { id: "aurora-lake", name: "极光山湖", url: "/wallpapers/photo/aurora-lake.jpg" },
-  { id: "ocean-cliff", name: "清晨海崖", url: "/wallpapers/photo/ocean-cliff.jpg" },
+type BuiltInWallpaper = { id: string; name: string; url: string; mobileUrl?: string };
+
+const featuredWallpapers: BuiltInWallpaper[] = [
+  { id: "coastal-glass", name: "冷雾海岸", url: "/wallpapers/photo/coastal-glass.jpg", mobileUrl: "/wallpapers/photo/mobile/coastal-glass.webp" },
+  { id: "neon-rain", name: "雨夜霓虹", url: "/wallpapers/photo/neon-rain.jpg", mobileUrl: "/wallpapers/photo/mobile/neon-rain.webp" },
+  { id: "aurora-lake", name: "极光山湖", url: "/wallpapers/photo/aurora-lake.jpg", mobileUrl: "/wallpapers/photo/mobile/aurora-lake.webp" },
+  { id: "ocean-cliff", name: "清晨海崖", url: "/wallpapers/photo/ocean-cliff.jpg", mobileUrl: "/wallpapers/photo/mobile/ocean-cliff.webp" },
   { id: "midnight-silk", name: "午夜丝绸", url: "/wallpapers/midnight-silk.svg" },
   { id: "jade-mist", name: "青玉雾光", url: "/wallpapers/jade-mist.svg" },
   { id: "rose-dusk", name: "玫瑰暮色", url: "/wallpapers/rose-dusk.svg" },
   { id: "silver-ridge", name: "银岭微光", url: "/wallpapers/silver-ridge.svg" }
 ];
 
-const legacyWallpapers = [
+const legacyWallpapers: BuiltInWallpaper[] = [
   { id: "sonoma-dawn", name: "晨雾", url: "/wallpapers/sonoma-dawn.svg" },
   { id: "aurora-tide", name: "极光", url: "/wallpapers/aurora-tide.svg" },
   { id: "glass-orchid", name: "兰紫", url: "/wallpapers/glass-orchid.svg" },
@@ -408,6 +449,7 @@ export default function App() {
   const [undoLabel, setUndoLabel] = useState("");
   const [restoreAvailable, setRestoreAvailable] = useState(false);
   const [migrationBackupAvailable, setMigrationBackupAvailable] = useState(false);
+  const [useCompactAssets, setUseCompactAssets] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   const stateRef = useRef(state);
   const activeUserIdRef = useRef<string | undefined>();
   const syncLockRef = useRef(false);
@@ -418,6 +460,14 @@ export default function App() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 700px)");
+    const update = () => setUseCompactAssets(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const applyState = (next: AppState) => {
     setState(next);
@@ -1217,19 +1267,20 @@ export default function App() {
   };
 
   const customWallpapers = state.settings.customWallpapers || [];
-  const wallpaperUrlForId = (id?: string) => {
+  const wallpaperUrlForId = (id?: string, compact = false) => {
     if (!id) return undefined;
-    return builtInWallpapers.find((wallpaper) => wallpaper.id === id)?.url
+    const builtIn = builtInWallpapers.find((wallpaper) => wallpaper.id === id);
+    return (compact ? builtIn?.mobileUrl : undefined) || builtIn?.url
       || customWallpapers.find((wallpaper) => wallpaper.id === id)?.dataUrl;
   };
   const wallpaperCollection = (state.settings.wallpaperCollection || [])
-    .map((id) => ({ id, url: wallpaperUrlForId(id) }))
+    .map((id) => ({ id, url: wallpaperUrlForId(id, useCompactAssets) }))
     .filter((item): item is { id: string; url: string } => Boolean(item.url));
   const rotatingWallpaper = wallpaperCollection.length
     ? wallpaperCollection[Math.floor(Date.now() / 86400000) % wallpaperCollection.length].url
-    : dailyWallpaper().url;
+    : (useCompactAssets ? dailyWallpaper().mobileUrl : undefined) || dailyWallpaper().url;
   const activeWallpaper = state.settings.wallpaper
-    || (state.settings.wallpaperRotation ? rotatingWallpaper : wallpaperUrlForId(state.settings.wallpaperPreset) || builtInWallpapers[0].url);
+    || (state.settings.wallpaperRotation ? rotatingWallpaper : wallpaperUrlForId(state.settings.wallpaperPreset, useCompactAssets) || builtInWallpapers[0].url);
   const backgroundStyle = {
     "--wallpaper-image": `url(${activeWallpaper})`,
     "--date-color": state.settings.dateTimeColor || "#ffffff",
@@ -3009,7 +3060,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
   const customWallpapers = settings.customWallpapers || [];
   const wallpaperCollection = settings.wallpaperCollection || [];
   const wallpaperItems = [
-    ...builtInWallpapers.map((wallpaper) => ({ ...wallpaper, custom: false })),
+    ...builtInWallpapers.map((wallpaper) => ({ ...wallpaper, url: wallpaper.mobileUrl || wallpaper.url, custom: false })),
     ...customWallpapers.map((wallpaper) => ({ id: wallpaper.id, name: wallpaper.name, url: wallpaper.dataUrl, custom: true }))
   ];
   const selectedWallpaperCount = wallpaperItems.filter((wallpaper) => wallpaperCollection.includes(wallpaper.id)).length;
