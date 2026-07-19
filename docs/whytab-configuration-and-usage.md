@@ -22,7 +22,9 @@ The app works without login. Signing in only enables cross-device sync.
 
 The app does not expose service URL or API key fields in the user interface.
 
-Frontend sync configuration is injected at build time:
+Normal users do not configure sync infrastructure. They only register or sign in with email and password in the official hosted app.
+
+Frontend sync configuration is injected at build time for the official deployment and for developers who self-host their own copy:
 
 ```text
 VITE_SUPABASE_URL

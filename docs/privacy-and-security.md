@@ -45,7 +45,7 @@ That means one user cannot read or write another user's rows through the public 
 
 ## Credentials and Keys
 
-The source code does not store production service URLs or keys directly.
+The source code does not store private production secrets directly.
 
 Build-time variables:
 
@@ -54,7 +54,7 @@ VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
 
-The Supabase publishable key is safe to use in browser clients when RLS is configured correctly, but it is still injected through build configuration so the public repository does not expose a specific deployment.
+The Supabase publishable key is safe to use in browser clients when RLS is configured correctly. It is not a `service_role` key and cannot bypass Row Level Security. The public whytab hosted app includes the browser-visible configuration needed for normal users to register, sign in, and sync.
 
 Never commit:
 
@@ -87,4 +87,3 @@ Security therefore depends on:
 - Least-privilege database access
 - Careful handling of exported user data
 - Optional Supabase protections such as email confirmation, rate limits, and CAPTCHA
-

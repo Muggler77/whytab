@@ -61,7 +61,7 @@ Sign-in is optional.
 - You can use whytab without an account. Your data stays in the current browser profile.
 - To sync across devices, open the account/sync panel and register with email and password.
 - Use the same account on another device to sync shortcuts, widgets, notes, todos, countdowns, settings, and layout.
-- Public users do not need to enter a service address, API key, access key, or advanced connection setting.
+- Public users only need an email and password. They do not need to prepare a backend, service address, API key, access key, or advanced connection setting.
 - Keep a JSON export backup when moving browsers or resetting a device.
 
 ## 中文快速使用
@@ -77,7 +77,7 @@ https://why-tool.com/
 - 插件安装方式：下载 GitHub 源码，运行 `npm install` 和 `npm run build`，然后在浏览器扩展管理页选择“加载已解压的扩展程序”，加载 `extension/dist`。
 - 不登录也可以用：数据默认保存在本机浏览器 IndexedDB。
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
-- 普通用户不需要填写“服务地址”“访问密钥”或任何高级连接配置。
+- 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
 
 ## Supported Platforms
 
@@ -151,8 +151,8 @@ User data safety is a core design point.
 - Without login, data stays in the current browser profile through IndexedDB.
 - After login, data is synced to Supabase under the signed-in user's `auth.uid()`.
 - Row Level Security policies restrict each user to their own rows.
-- The repository does not include Supabase `service_role` keys, database passwords, GitHub tokens, SSH private keys, production service URLs, or personal exported user data.
-- Frontend sync configuration is injected at build time through environment variables.
+- The repository does not include Supabase `service_role` keys, database passwords, GitHub tokens, SSH private keys, SMTP/API private keys, or personal exported user data.
+- The official hosted app uses build-time frontend sync configuration. The browser-visible Supabase publishable key is not an admin key; user data isolation depends on Supabase Auth and Row Level Security.
 
 More details: [Privacy and Security](docs/privacy-and-security.md).
 
@@ -260,7 +260,9 @@ The hosted sync backend uses Supabase:
 - Row Level Security to isolate per-user data
 - An Edge Function for cached Bank of China exchange-rate data
 
-Public users do not need to enter service URLs or API keys. The hosted build injects frontend sync configuration during build. If you fork and self-host, configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
+Public users do not need to enter service URLs or API keys. The official hosted app at `https://why-tool.com/` already contains the public client configuration required to talk to the whytab sync service. A user only registers or signs in with email and password.
+
+Only developers who fork the repository and self-host their own independent copy need to configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
 
 For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. The public whytab deployment uses Resend through Supabase Custom SMTP, with the production details documented in `docs/auth-email-delivery.md`. The branded confirmation template in `docs/supabase-confirm-signup-email.html` clearly says it is from whytab, explains that it verifies a sync account, includes the whytab logo, and keeps the `{{ .ConfirmationURL }}` variable intact.
 
@@ -292,7 +294,7 @@ Before making this repository public, the following checks are expected:
 - No personal shortcut export files are tracked.
 - No Supabase `service_role` key is tracked.
 - No database password, GitHub token, or SSH private key is tracked.
-- Public Supabase publishable key is injected only at build time.
+- No private backend/admin secrets are tracked. Public frontend sync configuration is only for browser login/sync and is protected by RLS.
 - RLS policies are present for user-owned tables.
 - The app remains usable without login through local IndexedDB.
 
