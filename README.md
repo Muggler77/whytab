@@ -4,6 +4,13 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
+## Product and Framework
+
+whytab is both a ready-to-use product and an open-source configurable framework.
+
+- For everyday users: use the official web app at `https://why-tool.com/`, register or sign in with email and password, and sync with the hosted whytab service. No server setup, service URL, API key, or access key is required.
+- For developers and teams: fork this repository, change the UI or sync provider, and self-host an independent deployment by providing your own build-time configuration.
+
 ## Highlights
 
 - Local-first data: shortcuts, widgets, todos, notes, countdowns, settings, and layout are stored in the browser's IndexedDB.
@@ -78,6 +85,13 @@ https://why-tool.com/
 - 不登录也可以用：数据默认保存在本机浏览器 IndexedDB。
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+## 产品与框架定位
+
+whytab 同时提供两种使用方式：
+
+- 普通用户：直接使用官方在线版 `https://why-tool.com/`，注册或登录账号即可同步，不需要自己部署服务。
+- 开发者或团队：可以 fork 这个仓库，把它当作一套可配置的新标签页/PWA 框架，替换界面、同步服务或部署环境，搭建自己的独立版本。
 
 ## Supported Platforms
 
@@ -262,7 +276,7 @@ The hosted sync backend uses Supabase:
 
 Public users do not need to enter service URLs or API keys. The official hosted app at `https://why-tool.com/` already contains the public client configuration required to talk to the whytab sync service. A user only registers or signs in with email and password.
 
-Only developers who fork the repository and self-host their own independent copy need to configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`.
+Only developers who fork the repository and self-host their own independent copy need to configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`. In that mode, this repository works as a configurable framework: the frontend, Auth provider, database project, email domain, and deployment target can be replaced by the self-hosting developer.
 
 For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. The public whytab deployment uses Resend through Supabase Custom SMTP, with the production details documented in `docs/auth-email-delivery.md`. The branded confirmation template in `docs/supabase-confirm-signup-email.html` clearly says it is from whytab, explains that it verifies a sync account, includes the whytab logo, and keeps the `{{ .ConfirmationURL }}` variable intact.
 

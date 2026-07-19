@@ -2,6 +2,11 @@
 
 This document describes how to configure and operate whytab without exposing private credentials or user data.
 
+whytab can be used in two modes:
+
+- Official hosted product: normal users register or sign in at `https://why-tool.com/` and use the hosted sync service.
+- Self-hosted framework: developers fork the repository, provide their own frontend configuration, Supabase project, email delivery setup, and deployment target.
+
 ## Local-First Behavior
 
 whytab stores user data in the browser profile first:
