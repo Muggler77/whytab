@@ -1452,11 +1452,11 @@ export default function App() {
             </div>
           </div>
           <div className="actions">
-            <button className="account-button" title="账号与云同步" onClick={() => setDialog("sync")}>
+            <button className="account-button" aria-label="账号与云同步" title="账号与云同步" onClick={() => setDialog("sync")}>
               <UserCircle size={17} />
               <span>{sync.user?.email || "未登录"}</span>
             </button>
-            <button className="top-action sync" title="同步" onClick={() => setDialog("sync")}><RefreshCcw size={17} /></button>
+            <button className="top-action sync" aria-label="同步" title="同步" onClick={() => setDialog("sync")}><RefreshCcw size={17} /></button>
           </div>
         </header>
 
@@ -1637,7 +1637,7 @@ export default function App() {
                     );
                   })}
                   {!shortcuts.length && !visibleFolders.length && (
-                    <button className="empty-shortcut" onClick={() => setDialog("shortcut")}><Plus size={22} /> 添加第一个网站</button>
+                    <button className="empty-shortcut" onClick={() => setDialog("shortcut")}><Plus size={22} /> 添加网站</button>
                   )}
                 </div>
               </section>
@@ -1900,11 +1900,7 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
   return (
     <section className="tool-hub" aria-label="工具箱">
       <div className="tool-hero">
-        <div>
-          <span>Tools</span>
-          <h2>工具箱</h2>
-          <p>把 whytab 常用工具集中到左侧导航，不再藏在设置和右键菜单里。</p>
-        </div>
+        <h2>工具箱</h2>
       </div>
       <div className="tool-utility-grid">
         <section className="tool-utility-panel translate-tool">
@@ -1914,7 +1910,7 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
         </section>
         <section className="tool-utility-panel number-tool">
           <div className="tool-panel-title"><BookOpen size={18} /><span>数字工具</span></div>
-          <input inputMode="decimal" value={numberText} onChange={(event) => setNumberText(event.target.value)} />
+          <input aria-label="十进制数字" inputMode="decimal" value={numberText} onChange={(event) => setNumberText(event.target.value)} />
           <div className="tool-result-grid">
             <div><span>二进制</span><strong>{validNumber ? Math.trunc(numericValue).toString(2) : "--"}</strong></div>
             <div><span>十六进制</span><strong>{validNumber ? Math.trunc(numericValue).toString(16).toUpperCase() : "--"}</strong></div>
@@ -2009,6 +2005,7 @@ function HomeShortcuts({ tiles, iconSize, onOpenFolder, onShortcutMenu, onMoveTi
     if (touchSource !== key) onMoveTile(touchSource, key);
     setTouchSource(undefined);
   };
+  if (tiles.length === 0) return null;
   return (
     <section className={`home-shortcuts ${draggingKey ? "is-arranging" : ""} ${touchArranging ? "touch-arranging" : ""}`} aria-label="主页快捷入口">
       <div className="mobile-shortcut-toolbar">

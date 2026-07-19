@@ -21,7 +21,7 @@ npm run build
 
 4. Verify `extension/dist/latest-version.json` exists and matches the intended published version.
 
-5. Confirm `/Users/muggler/whytab-extension-dist` has been synced from `extension/dist`.
+5. Confirm `$HOME/whytab-extension-dist` has been synced from `extension/dist`.
 
 6. Confirm GitHub `main` matches the local NQ790 commit.
 
