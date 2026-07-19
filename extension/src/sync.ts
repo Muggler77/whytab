@@ -229,7 +229,7 @@ export function normalizeState(state: AppState): AppState {
       wallpaper: visualVersion < 5 ? undefined : state.settings.wallpaper,
       wallpaperPreset: visualVersion < 5 ? "aurora-lake" : state.settings.wallpaperPreset || "aurora-lake",
       wallpaperRotation: visualVersion < 5 ? false : state.settings.wallpaperRotation ?? false,
-      visualRefreshVersion: 9,
+      visualRefreshVersion: 10,
       iconSize: visualVersion < 8 && state.settings.iconSize === 64 ? 58 : state.settings.iconSize || 58,
       glass: Math.min(state.settings.glass || 42, 46),
       customWallpapers: state.settings.customWallpapers || [],
@@ -244,6 +244,10 @@ export function normalizeState(state: AppState): AppState {
         && pages.findIndex((candidate) => candidate.id === page.id) === index
       )),
       hiddenNavPages: Array.from(new Set((state.settings.hiddenNavPages || []).filter((page) => page === "shortcuts" || page === "tools"))),
+      navigationDisplay: state.settings.navigationDisplay === "auto" || state.settings.navigationDisplay === "hidden"
+        ? state.settings.navigationDisplay
+        : "always",
+      navigationSide: state.settings.navigationSide === "right" ? "right" : "left",
       timeZone: state.settings.timeZone || "Asia/Shanghai",
       dateTimeColor: state.settings.dateTimeColor || "#ffffff",
       widgetAccentColor: state.settings.widgetAccentColor || "#2dd4bf",

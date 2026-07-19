@@ -290,7 +290,7 @@ textarea:focus-visible {
 }
 
 .home-dashboard .home-shortcut .shortcut-icon {
-  border-radius: 12px !important;
+  border-radius: clamp(14px, 30%, 20px) !important;
 }
 
 .home-dashboard .home-widgets .widget,

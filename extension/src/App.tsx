@@ -31,6 +31,9 @@ import {
   LogOut,
   Palette,
   Pin,
+  PanelLeft,
+  PanelRight,
+  Eye,
   EyeOff,
   Plus,
   RefreshCcw,
@@ -52,7 +55,7 @@ import {
   UserCircle,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
@@ -95,6 +98,7 @@ const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ICON_LOAD_TIMEOUT_MS = 1400;
+const SortableWidgetGrid = lazy(() => import("./SortableWidgetGrid"));
 
 const isFreshCache = (updatedAt?: string, maxAge = WEATHER_CACHE_MAX_AGE_MS) => {
   if (!updatedAt) return false;
@@ -168,9 +172,15 @@ const widgetLibraryMeta: Record<WidgetKey, {
 };
 
 const widgetSizeLabels: Record<WidgetSize, string> = {
-  small: "小",
-  medium: "中",
-  wide: "大"
+  small: "紧凑",
+  medium: "标准",
+  wide: "展开"
+};
+
+const widgetSizeDetails: Record<WidgetSize, string> = {
+  small: "快速扫一眼",
+  medium: "均衡信息量",
+  wide: "显示完整内容"
 };
 
 const allWidgetSizes: WidgetSize[] = ["small", "medium", "wide"];
@@ -468,7 +478,7 @@ export default function App() {
   const [clock, setClock] = useState(() => new Date());
   const [activeLayer, setActiveLayer] = useState("all");
   const [layoutEditing, setLayoutEditing] = useState(false);
-  const [touchWidgetKey, setTouchWidgetKey] = useState<WidgetKey | undefined>();
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [dragId, setDragId] = useState<string | undefined>();
   const [weather, setWeather] = useState<WeatherState | undefined>();
   const [rates, setRates] = useState<RatesState | undefined>();
@@ -777,6 +787,14 @@ export default function App() {
 
   const hiddenNavPages = useMemo(() => new Set(state.settings.hiddenNavPages || []), [state.settings.hiddenNavPages]);
   const visibleSystemPageOrder = useMemo(() => homePageOrder.filter((page) => page === "widgets" || !hiddenNavPages.has(page)), [hiddenNavPages]);
+  const navigationDisplay = state.settings.navigationDisplay === "auto" || state.settings.navigationDisplay === "hidden"
+    ? state.settings.navigationDisplay
+    : "always";
+  const navigationSide = state.settings.navigationSide === "right" ? "right" : "left";
+
+  useEffect(() => {
+    setNavigationOpen(false);
+  }, [navigationDisplay, navigationSide]);
 
   const allShortcuts = useMemo(() => {
     return state.shortcuts.filter((shortcut) => !shortcut.deletedAt).sort((a, b) => a.order - b.order);
@@ -1362,6 +1380,18 @@ export default function App() {
     }));
   };
 
+  const setWidgetSize = (key: WidgetKey, size: WidgetSize) => {
+    rememberUndo("调整组件尺寸");
+    updateState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        widgetSizes: { ...defaultWidgetSizes, ...(current.settings.widgetSizes || {}), [key]: size },
+        updatedAt: nowIso()
+      }
+    }));
+  };
+
   const widgetOrder = useMemo(() => {
     const seen = new Set<WidgetKey>();
     const saved = state.settings.widgetOrder || [];
@@ -1512,6 +1542,7 @@ export default function App() {
     year: <YearProgressWidget key="year" widgetKey="year" size={widgetSizes.year} date={today} />,
     calculator: <CalculatorWidget key="calculator" widgetKey="calculator" size={widgetSizes.calculator} />
   };
+  const enabledWidgetOrder = widgetOrder.filter((key) => state.settings.widgets[key]);
 
   const goToPage = (nextPage: HomePage) => {
     if (nextPage === activePage && !activeCustomPageId) return;
@@ -1522,6 +1553,7 @@ export default function App() {
     setActiveCustomPageId(undefined);
     if (nextPage === "shortcuts") setActiveLayer("all");
     setActivePage(nextPage);
+    if (navigationDisplay === "hidden") setNavigationOpen(false);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   };
 
@@ -1532,6 +1564,7 @@ export default function App() {
     setActiveCustomPageId(page.id);
     setActiveLayer(page.groupId);
     setActivePage("shortcuts");
+    if (navigationDisplay === "hidden") setNavigationOpen(false);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   };
 
@@ -1556,66 +1589,51 @@ export default function App() {
     goToPage(nextPage);
   };
 
-  const widgetsPanel = (
-    <section
-      className={`widgets home-widgets ${layoutEditing ? "layout-editing touch-arranging" : ""}`}
-      aria-label="主页小组件"
-      data-touch-source={touchWidgetKey}
-      onClickCapture={(event) => {
-        if (!layoutEditing) return;
-        const target = event.target as HTMLElement;
-        if (target.closest("button, input, select, textarea, a, label")) return;
-        const widget = target.closest(".widget") as HTMLElement | null;
-        const key = widget?.dataset.widgetKey as WidgetKey | undefined;
-        if (!key) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (!touchWidgetKey) {
-          setTouchWidgetKey(key);
-          showToast(`已选中${widgetNames[key]}，请点目标位置`);
-          return;
-        }
-        if (touchWidgetKey !== key) {
-          reorderWidget(touchWidgetKey, key);
-          showToast("小组件位置已调整");
-        }
-        setTouchWidgetKey(undefined);
-      }}
-      onContextMenu={(event) => {
-        const target = event.target as HTMLElement;
-        if (target.closest("input") || target.closest("select") || target.closest("textarea")) return;
-        const widget = target.closest(".widget") as HTMLElement | null;
-        openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
-      }}
-      onDragOver={(event) => {
-        if (!layoutEditing) return;
-        const target = (event.target as HTMLElement).closest(".widget") as HTMLElement | null;
-        if (!target) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        document.querySelectorAll(".home-widgets .widget.is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
-        target.classList.add("is-drop-target");
-      }}
-      onDrop={(event) => {
-        if (!layoutEditing) return;
-        const target = (event.target as HTMLElement).closest(".widget") as HTMLElement | null;
-        if (!target) return;
-        event.preventDefault();
-        reorderWidget(event.dataTransfer.getData("text/whytab-widget") as WidgetKey, target.dataset.widgetKey as WidgetKey | undefined);
-        document.querySelectorAll(".home-widgets .widget.is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
-      }}
-      onDragEndCapture={() => {
-        document.querySelectorAll(".home-widgets .widget.is-dragging, .home-widgets .widget.is-drop-target").forEach((node) => {
-          node.classList.remove("is-dragging", "is-drop-target");
-        });
-      }}
-    >
-      {widgetOrder.map((key) => state.settings.widgets[key] ? widgetRenderers[key] : null)}
+  const handleWidgetContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, select, textarea")) return;
+    const widget = target.closest(".widget, .widget-sortable-shell") as HTMLElement | null;
+    openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
+  };
+  const widgetGridItems = enabledWidgetOrder.map((key) => {
+    const PreviewIcon = widgetLibraryMeta[key].Icon;
+    return {
+      id: key,
+      size: widgetSizes[key],
+      label: widgetNames[key],
+      sizeLabel: widgetSizeLabels[widgetSizes[key]],
+      icon: <PreviewIcon size={18} />,
+      content: widgetRenderers[key]
+    };
+  });
+  const staticWidgetsPanel = (
+    <section className="widgets home-widgets" aria-label="主页小组件" onContextMenu={handleWidgetContextMenu}>
+      {widgetGridItems.map((item) => (
+        <div className={`widget-sortable-shell widget-size-${item.size}`} data-widget-key={item.id} key={item.id}>
+          {item.content}
+        </div>
+      ))}
     </section>
   );
+  const widgetsPanel = layoutEditing ? (
+    <Suspense fallback={staticWidgetsPanel}>
+      <SortableWidgetGrid
+        items={widgetGridItems}
+        onContextMenu={handleWidgetContextMenu}
+        onMove={(source, target) => {
+          reorderWidget(source, target);
+          showToast(`${widgetNames[source]}已移动`);
+        }}
+      />
+    </Suspense>
+  ) : staticWidgetsPanel;
 
   return (
-    <main className={`app ${state.settings.theme}`} style={backgroundStyle} onWheel={handlePageWheel}>
+    <main
+      className={`app ${state.settings.theme} nav-${navigationDisplay} nav-${navigationSide} ${navigationOpen ? "nav-open" : ""}`}
+      style={backgroundStyle}
+      onWheel={handlePageWheel}
+    >
       <div className="shell">
         <header className="topbar">
           <div className="brand">
@@ -1653,6 +1671,18 @@ export default function App() {
           </div>
         </section>
 
+        {navigationDisplay === "hidden" && !navigationOpen && (
+          <button
+            type="button"
+            className="page-nav-trigger"
+            aria-label="显示页面导航"
+            title="显示页面导航"
+            onClick={() => setNavigationOpen(true)}
+          >
+            {navigationSide === "right" ? <PanelRight size={17} /> : <PanelLeft size={17} />}
+          </button>
+        )}
+
         <nav className="page-nav" aria-label="whytab 页面切换">
           <div className="page-nav-main">
             <button className={activePage === "widgets" ? "active" : ""} onClick={() => goToPage("widgets")} title="主页小组件">
@@ -1684,6 +1714,9 @@ export default function App() {
           <div className="page-nav-secondary">
             <button onClick={() => setDialog("pages")} title="管理页面" aria-label="管理页面"><Plus size={18} /></button>
             <button onClick={() => setDialog("settings")} title="设置"><Settings size={18} /></button>
+            {navigationDisplay === "hidden" && (
+              <button className="nav-hide-control" onClick={() => setNavigationOpen(false)} title="隐藏导航" aria-label="隐藏导航"><EyeOff size={18} /></button>
+            )}
           </div>
         </nav>
 
@@ -1715,8 +1748,7 @@ export default function App() {
                   onClick={() => {
                     const next = !layoutEditing;
                     setLayoutEditing(next);
-                    setTouchWidgetKey(undefined);
-                    showToast(next ? "布局编辑已开启：拖动项目，手机可点选后移动" : "主页布局已保存");
+                    showToast(next ? "布局编辑已开启：拖动卡片右上角手柄调整位置" : "主页布局已保存");
                   }}
                 >
                   {layoutEditing ? <Check size={17} /> : <GripVertical size={17} />}
@@ -1879,7 +1911,12 @@ export default function App() {
       {widgetMenu && (
         <WidgetContextMenu
           menu={widgetMenu}
+          size={widgetMenu.widgetKey ? widgetSizes[widgetMenu.widgetKey] : undefined}
           onClose={() => setWidgetMenu(null)}
+          onResize={(key, size) => {
+            setWidgetSize(key, size);
+            showToast(`${widgetNames[key]}已切换为${widgetSizeLabels[size]}尺寸`);
+          }}
           onOpenLibrary={() => { setDialog("library"); setWidgetMenu(null); }}
           onRefresh={() => { void refreshExternalData(state, true); setWidgetMenu(null); }}
           onRotateWallpaper={() => { rotateMainWallpaper(); setWidgetMenu(null); }}
@@ -2373,9 +2410,48 @@ function PageContextMenu({ menu, onClose, onAddFolder, onAddShortcut, onAddGroup
   );
 }
 
-function WidgetContextMenu({ menu, onClose, onOpenLibrary, onRefresh, onRotateWallpaper, onHide }: {
+function WidgetSizePicker({ widgetKey, value, onChange, disabled = false, compact = false }: {
+  widgetKey: WidgetKey;
+  value: WidgetSize;
+  onChange: (size: WidgetSize) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const meta = widgetLibraryMeta[widgetKey];
+  const PreviewIcon = meta.Icon;
+  return (
+    <div className={`widget-size-picker ${compact ? "compact" : ""}`} role="radiogroup" aria-label={`${widgetNames[widgetKey]}尺寸`}>
+      {widgetSizeOptions[widgetKey].map((size) => (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value === size}
+          className={`widget-size-option widget-size-option-${size} ${value === size ? "active" : ""}`}
+          key={size}
+          onClick={() => onChange(size)}
+          disabled={disabled}
+        >
+          <span className={`widget-size-thumbnail widget-tone-${widgetKey}`} aria-hidden="true">
+            <span className="widget-size-thumbnail-head"><PreviewIcon size={compact ? 11 : 13} /><i /></span>
+            <strong>{meta.preview}</strong>
+            <span className="widget-size-thumbnail-lines"><i /><i /><i /></span>
+          </span>
+          <span className="widget-size-option-copy">
+            <strong>{widgetSizeLabels[size]}</strong>
+            {!compact && <small>{widgetSizeDetails[size]}</small>}
+          </span>
+          <span className="widget-size-check"><Check size={13} /></span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function WidgetContextMenu({ menu, size, onClose, onResize, onOpenLibrary, onRefresh, onRotateWallpaper, onHide }: {
   menu: Exclude<WidgetMenuState, null>;
+  size?: WidgetSize;
   onClose: () => void;
+  onResize: (key: WidgetKey, size: WidgetSize) => void;
   onOpenLibrary: () => void;
   onRefresh: () => void;
   onRotateWallpaper: () => void;
@@ -2383,22 +2459,37 @@ function WidgetContextMenu({ menu, onClose, onOpenLibrary, onRefresh, onRotateWa
 }) {
   useEffect(() => {
     const close = () => onClose();
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
     window.addEventListener("click", close);
     window.addEventListener("blur", close);
+    window.addEventListener("keydown", closeOnEscape);
     return () => {
       window.removeEventListener("click", close);
       window.removeEventListener("blur", close);
+      window.removeEventListener("keydown", closeOnEscape);
     };
   }, [onClose]);
-  const position = contextMenuPosition(menu.x, menu.y, 236, 250);
+  const position = contextMenuPosition(menu.x, menu.y, 344, menu.widgetKey ? 470 : 250);
   const widgetName = menu.widgetKey ? widgetNames[menu.widgetKey] : "主页";
+  const WidgetIcon = menu.widgetKey ? widgetLibraryMeta[menu.widgetKey].Icon : Palette;
   return (
-    <div className="shortcut-menu page-menu widget-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
-      <strong>{widgetName}</strong>
-      <button onClick={onOpenLibrary}><Palette size={14} /> 小组件库与外观</button>
-      <button onClick={onRefresh}><RefreshCcw size={14} /> 刷新数据</button>
-      <button onClick={onRotateWallpaper}><Shuffle size={14} /> 换一张壁纸</button>
-      {menu.widgetKey && <button onClick={() => onHide(menu.widgetKey!)}><EyeOff size={14} /> 隐藏这个组件</button>}
+    <div className="shortcut-menu page-menu widget-menu" role="dialog" aria-label={`${widgetName}设置`} style={position} onClick={(event) => event.stopPropagation()}>
+      <div className="widget-menu-heading">
+        <span className="widget-menu-icon"><WidgetIcon size={18} /></span>
+        <span><strong>{widgetName}</strong><small>{menu.widgetKey ? "尺寸会立即显示在主页" : "主页外观与数据"}</small></span>
+        <button type="button" className="widget-menu-close" onClick={onClose} aria-label="关闭"><X size={15} /></button>
+      </div>
+      {menu.widgetKey && size && (
+        <WidgetSizePicker widgetKey={menu.widgetKey} value={size} onChange={(nextSize) => onResize(menu.widgetKey!, nextSize)} />
+      )}
+      <div className="widget-menu-actions">
+        <button onClick={onOpenLibrary}><Palette size={14} /> 小组件库</button>
+        <button onClick={onRefresh}><RefreshCcw size={14} /> 刷新数据</button>
+        <button onClick={onRotateWallpaper}><Shuffle size={14} /> 更换壁纸</button>
+        {menu.widgetKey && <button className="danger" onClick={() => onHide(menu.widgetKey!)}><EyeOff size={14} /> 隐藏组件</button>}
+      </div>
     </div>
   );
 }
@@ -2453,30 +2544,12 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
     <section
       className={`widget widget-${tone} widget-size-${size}`}
       data-widget-key={widgetKey}
-      draggable={Boolean(widgetKey)}
       onMouseDown={(event) => {
         const target = event.target as HTMLElement;
         if (target.closest("button") || target.closest("input") || target.closest("select") || target.closest("textarea") || target.closest("a") || target.closest("label")) {
           event.stopPropagation();
         }
       }}
-      onDragStart={(event) => {
-        const target = event.target as HTMLElement;
-        if (!event.currentTarget.closest(".layout-editing")) {
-          event.preventDefault();
-          return;
-        }
-        if (target.closest("button") || target.closest("input") || target.closest("select") || target.closest("textarea") || target.closest("a") || target.closest("label")) {
-          event.preventDefault();
-          return;
-        }
-        if (widgetKey) {
-          event.dataTransfer.setData("text/whytab-widget", widgetKey);
-          event.dataTransfer.effectAllowed = "move";
-          event.currentTarget.classList.add("is-dragging");
-        }
-      }}
-      onDragEnd={(event) => event.currentTarget.classList.remove("is-dragging")}
     >
       <div className="widget-title">
         <div className="widget-heading">
@@ -2488,7 +2561,6 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
         </div>
         <div className="widget-actions">
           {action}
-          {widgetKey && <span className="widget-drag-handle" title="拖动小组件" aria-hidden="true"><GripVertical size={15} /></span>}
         </div>
       </div>
       <div className="widget-content">{children}</div>
@@ -2520,12 +2592,22 @@ function WeatherWidget({ widgetKey, size, weather, city, useLocation, refreshing
         <span className="weather-bolt" />
         <span className="weather-fog-lines" />
       </div>
-      <a className="weather-card" href={source} target="_blank" rel="noreferrer" title="打开天气数据来源">
-        <div className="weather-line">
-          <strong>{weather ? `${Math.round(weather.temperature)}°` : "--"}</strong>
-          <span>{weather ? weatherLabel(weather.weatherCode) : city}</span>
-        </div>
-        <p>{weather ? `${useLocation ? "定位" : "城市"} · ${compactPlace} · 风速 ${weather.windSpeed} km/h` : "等待天气数据"}</p>
+      <a className={`weather-card ${weather ? "" : "is-loading"}`} href={source} target="_blank" rel="noreferrer" title="打开天气数据来源">
+        {weather ? (
+          <>
+            <div className="weather-line">
+              <strong>{Math.round(weather.temperature)}°</strong>
+              <span>{weatherLabel(weather.weatherCode)}</span>
+            </div>
+            <p>{`${useLocation ? "定位" : "城市"} · ${compactPlace} · 风速 ${weather.windSpeed} km/h`}</p>
+          </>
+        ) : (
+          <div className="weather-loading-state">
+            <span><Globe2 size={22} /></span>
+            <strong>正在准备天气</strong>
+            <small>{useLocation ? "读取设备位置" : `查询 ${city}`}</small>
+          </div>
+        )}
       </a>
       {days.length > 0 && (
         <div className="forecast-strip" aria-label={`${days.length} 天天气预报`}>
@@ -2662,28 +2744,39 @@ function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: W
     const item: Countdown = { id: uid(), title, date, updatedAt: nowIso() };
     updateState((current) => ({ ...current, countdowns: [...current.countdowns, item] }));
   };
+  const items = state.countdowns.filter((item) => !item.deletedAt);
+  const countdownDays = (item: Countdown) => Math.ceil((new Date(`${item.date}T00:00:00`).getTime() - Date.now()) / 86400000);
+  const removeCountdown = (id: string) => {
+    const deletedAt = nowIso();
+    updateState((current) => ({
+      ...current,
+      countdowns: current.countdowns.map((countdown) => countdown.id === id ? { ...countdown, deletedAt, updatedAt: deletedAt } : countdown)
+    }));
+  };
+  const featured = items[0];
   return (
     <Widget title="倒计时" widgetKey={widgetKey} tone="countdown" size={size} action={<button title="添加" onClick={addCountdown}><Plus size={14} /></button>}>
-      {state.countdowns.filter((item) => !item.deletedAt).map((item) => {
-        const days = Math.ceil((new Date(`${item.date}T00:00:00`).getTime() - Date.now()) / 86400000);
+      {featured ? (() => {
+        const days = countdownDays(featured);
+        return (
+          <div className="countdown-feature">
+            <div className="countdown-value"><strong>{Math.abs(days)}</strong><span>天</span></div>
+            <div className="countdown-copy">
+              <strong>{featured.title}</strong>
+              <span>{days >= 0 ? "距离目标日" : "已经过去"}</span>
+              <time dateTime={featured.date}>{new Date(`${featured.date}T00:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}</time>
+            </div>
+            <button type="button" title="删除倒计时" onClick={() => removeCountdown(featured.id)}><X size={13} /></button>
+          </div>
+        );
+      })() : <button type="button" className="countdown-empty" onClick={addCountdown}><Plus size={18} /><span>添加一个重要日期</span></button>}
+      {items.slice(1).map((item) => {
+        const days = countdownDays(item);
         return (
           <div className="list-row" key={item.id}>
             <span>{item.title}</span>
             <strong>{days >= 0 ? `${days} 天` : `已过 ${Math.abs(days)} 天`}</strong>
-            <button
-              title="删除倒计时"
-              onClick={() => {
-                const deletedAt = nowIso();
-                updateState((current) => ({
-                  ...current,
-                  countdowns: current.countdowns.map((countdown) =>
-                    countdown.id === item.id ? { ...countdown, deletedAt, updatedAt: deletedAt } : countdown
-                  )
-                }));
-              }}
-            >
-              <X size={13} />
-            </button>
+            <button type="button" title="删除倒计时" onClick={() => removeCountdown(item.id)}><X size={13} /></button>
           </div>
         );
       })}
@@ -2745,6 +2838,11 @@ function TodoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widget
       size={size}
       action={<button type="button" className="todo-count" title="管理任务" onClick={() => setPanelOpen(true)}>{activeCount}/{todos.length}</button>}
     >
+      <div className="todo-progress" aria-label={`已完成 ${doneCount} 项，共 ${todos.length} 项`}>
+        <span><strong>{doneCount}</strong> 已完成</span>
+        <i><b style={{ width: `${todos.length ? Math.round((doneCount / todos.length) * 100) : 0}%` }} /></i>
+        <small>{activeCount} 待处理</small>
+      </div>
       <div className="input-row">
         <input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && add()} placeholder="新增任务" />
         <button type="button" title="添加" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); add(); }}><Plus size={14} /></button>
@@ -3430,13 +3528,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
                       {enabled ? <Check size={15} /> : <Plus size={15} />}
                     </button>
                   </div>
-                  <div className="widget-size-control" aria-label={`${widgetNames[key]}尺寸`}>
-                    {widgetSizeOptions[key].map((size) => (
-                      <button type="button" className={sizes[key] === size ? "active" : ""} key={size} onClick={() => setWidgetSize(key, size)} disabled={!enabled}>
-                        {widgetSizeLabels[size]}
-                      </button>
-                    ))}
-                  </div>
+                  <WidgetSizePicker widgetKey={key} value={sizes[key]} onChange={(size) => setWidgetSize(key, size)} disabled={!enabled} compact />
                 </section>
               );
             })}
@@ -3648,6 +3740,21 @@ function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateSt
   return (
     <DialogShell title="外观设置" onClose={onClose}>
       <label>主题<select value={settings.theme} onChange={(event) => setSetting("theme", event.target.value as "light" | "dark")}><option value="dark">深色</option><option value="light">浅色</option></select></label>
+      <div className="settings-choice-group">
+        <span className="settings-choice-label">桌面导航位置</span>
+        <div className="settings-segments" role="radiogroup" aria-label="桌面导航位置">
+          <button type="button" role="radio" aria-checked={(settings.navigationSide || "left") === "left"} className={(settings.navigationSide || "left") === "left" ? "active" : ""} onClick={() => setSetting("navigationSide", "left")}><PanelLeft size={16} />左侧</button>
+          <button type="button" role="radio" aria-checked={settings.navigationSide === "right"} className={settings.navigationSide === "right" ? "active" : ""} onClick={() => setSetting("navigationSide", "right")}><PanelRight size={16} />右侧</button>
+        </div>
+      </div>
+      <div className="settings-choice-group">
+        <span className="settings-choice-label">桌面导航显示</span>
+        <div className="settings-segments settings-segments-three" role="radiogroup" aria-label="桌面导航显示方式">
+          <button type="button" role="radio" aria-checked={(settings.navigationDisplay || "always") === "always"} className={(settings.navigationDisplay || "always") === "always" ? "active" : ""} onClick={() => setSetting("navigationDisplay", "always")}><Pin size={16} />始终显示</button>
+          <button type="button" role="radio" aria-checked={settings.navigationDisplay === "auto"} className={settings.navigationDisplay === "auto" ? "active" : ""} onClick={() => setSetting("navigationDisplay", "auto")}><Eye size={16} />自动隐藏</button>
+          <button type="button" role="radio" aria-checked={settings.navigationDisplay === "hidden"} className={settings.navigationDisplay === "hidden" ? "active" : ""} onClick={() => setSetting("navigationDisplay", "hidden")}><EyeOff size={16} />隐藏</button>
+        </div>
+      </div>
       <label>城市<input value={settings.city} onChange={(event) => setSetting("city", event.target.value)} /></label>
       <label>时间显示<select value={settings.timeZone || "Asia/Shanghai"} onChange={(event) => setSetting("timeZone", event.target.value)}>{timeZoneOptions.map((zone) => <option value={zone.value} key={zone.value}>{zone.label} · {zone.value}</option>)}</select></label>
       <div className="color-settings">

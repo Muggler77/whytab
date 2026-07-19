@@ -76,7 +76,7 @@ try {
   const backup = createStateBackup("测试备份", legacyState);
   assert.equal(backup.state.shortcuts[0].url, "https://openai.com", "manual backup must preserve shortcuts");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.2.1" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.2.2" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -87,9 +87,11 @@ try {
     settings: { ...legacyState.settings, iconSize: 64, visualRefreshVersion: 7 }
   });
   assert.equal(oldDefaultVisual.settings.iconSize, 58, "old default icon size should migrate to the new unified default");
-  assert.equal(oldDefaultVisual.settings.visualRefreshVersion, 9, "visual refresh version should advance");
+  assert.equal(oldDefaultVisual.settings.visualRefreshVersion, 10, "visual refresh version should advance");
   assert.deepEqual(oldDefaultVisual.settings.customNavPages, [], "legacy state should receive an empty custom page list");
   assert.deepEqual(oldDefaultVisual.settings.hiddenNavPages, [], "legacy state should keep all built-in pages visible");
+  assert.equal(oldDefaultVisual.settings.navigationDisplay, "always", "legacy state should receive a visible desktop navigation");
+  assert.equal(oldDefaultVisual.settings.navigationSide, "left", "legacy state should keep desktop navigation on the left");
   assert.equal(oldDefaultVisual.settings.widgetOrder[0], "notes", "custom widget order must be preserved");
   assert.equal(oldDefaultVisual.settings.widgetSizes.notes, "wide", "custom widget size must be preserved");
 
@@ -107,11 +109,15 @@ try {
       customNavPages: [
         { id: "page-work", name: "工作", groupId: "default", icon: "briefcase", order: 0, updatedAt: now }
       ],
-      hiddenNavPages: ["tools"]
+      hiddenNavPages: ["tools"],
+      navigationDisplay: "auto",
+      navigationSide: "right"
     }
   });
   assert.equal(customNavigation.settings.customNavPages[0].name, "工作", "custom navigation pages must be preserved");
   assert.deepEqual(customNavigation.settings.hiddenNavPages, ["tools"], "hidden built-in pages must be preserved");
+  assert.equal(customNavigation.settings.navigationDisplay, "auto", "custom navigation visibility must be preserved");
+  assert.equal(customNavigation.settings.navigationSide, "right", "custom navigation side must be preserved");
   assert.equal(customNavigation.shortcuts[0].title, "OpenAI", "navigation migration must not alter shortcuts");
   assert.equal(customNavigation.notes[0].body, "重要数据", "navigation migration must not alter notes");
 } finally {

@@ -110,6 +110,8 @@ export type Settings = {
   widgetSizes?: Record<WidgetKey, WidgetSize>;
   customNavPages?: CustomNavPage[];
   hiddenNavPages?: Array<"shortcuts" | "tools">;
+  navigationDisplay?: "always" | "auto" | "hidden";
+  navigationSide?: "left" | "right";
   timeZone?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;

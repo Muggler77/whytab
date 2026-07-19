@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.2.1**. See the [bilingual release notes](docs/releases/0.2.1.md).
+Current release: **0.2.2**. See the [bilingual release notes](docs/releases/0.2.2.md).
 
 ## Product and Framework
 
@@ -92,6 +92,15 @@ https://why-tool.com/
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
 
+### 0.2.2 导航、拖拽与小组件
+
+- 桌面导航固定在屏幕边缘，不再垂直居中；设置中可以选择左侧或右侧，以及始终显示、自动隐藏或隐藏。
+- 小组件改用可靠的鼠标、触屏和键盘排序交互，拖动手柄会显示清晰预览，排序结果即时保存。
+- 右键点击小组件即可直接看到紧凑、标准、展开三种比例预览，并实时调整尺寸。
+- 主页和网站页共用同一套图标尺寸、圆角和图片留白规则；图标尺寸滑杆会同时作用于两页。
+- 重新设计 12 个小组件的色彩、标题、内容层级、加载态和空状态，重点改善天气、倒计时与待办在数据较少时的大块空白。
+- 拖拽引擎只在进入布局编辑时加载，减少普通新标签页启动时需要下载和解析的代码。
+
 ### 0.2.1 界面与布局
 
 - 首页改为更清晰的工作台排版，统一图标、文字、小组件标题和操作按钮，避免图标与文字重叠。
@@ -153,6 +162,7 @@ The browser extension replaces the new tab page where the browser supports `chro
 - Year progress
 - Calculator
 - Reorder widgets in layout editing mode with responsive desktop, tablet, and phone layouts
+- Mouse, touch, and keyboard widget sorting with a dedicated drag handle and live drag preview
 
 ### Pages and Navigation
 
@@ -172,6 +182,7 @@ The browser extension replaces the new tab page where the browser supports `chro
 - Grid density
 - Dock position
 - Mobile bottom navigation
+- Desktop navigation side and visibility controls
 - Phone single-column and tablet two-column widget layouts
 
 ### Sync and Backup
@@ -203,6 +214,7 @@ More details: [Privacy and Security](docs/privacy-and-security.md).
 - Vite
 - Chrome Extension Manifest V3
 - lucide-react
+- dnd-kit, loaded only while editing the widget layout
 - IndexedDB
 - Supabase Auth
 - Supabase Postgres
@@ -223,6 +235,7 @@ More details: [Privacy and Security](docs/privacy-and-security.md).
 │   │   └── wallpapers           # Built-in wallpapers
 │   ├── src
 │   │   ├── App.tsx              # Main UI and dialogs
+│   │   ├── SortableWidgetGrid.tsx # Lazy-loaded widget sorting
 │   │   ├── styles.css           # Global and responsive styles
 │   │   ├── db.ts                # IndexedDB persistence
 │   │   ├── sync.ts              # Auth and sync helpers

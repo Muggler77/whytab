@@ -1942,7 +1942,7 @@ small,
 }
 
 .home-shortcuts-row .shortcut-icon {
-  --icon: 48px;
+  --icon: inherit;
 }
 
 .home-widgets,
