@@ -1,4 +1,4 @@
-/* WhyTab 0.2.2: edge navigation, reliable sorting, and a refined workspace. */
+/* WhyTab 0.2.3: stable edge navigation, context menus, and workspace geometry. */
 
 .app {
   --v21-surface: rgba(14, 17, 21, 0.78);
@@ -44,24 +44,19 @@
 }
 
 .shell {
+  --v21-shell-gutter: max(28px, calc(92px - (100vw - min(100vw, 1480px)) / 2));
   width: min(1480px, 100%) !important;
   min-height: 100dvh;
   margin: 0 auto !important;
-  padding: 18px 28px 48px 112px !important;
+  padding: 18px var(--v21-shell-gutter) 48px !important;
   gap: 14px !important;
 }
 
-.app.nav-always.nav-left .shell {
-  padding: 18px 28px 48px 112px !important;
-}
-
-.app.nav-always.nav-right .shell {
-  padding: 18px 112px 48px 28px !important;
-}
-
+.app.nav-always.nav-left .shell,
+.app.nav-always.nav-right .shell,
 .app.nav-auto .shell,
 .app.nav-hidden .shell {
-  padding: 18px 28px 48px !important;
+  padding: 18px var(--v21-shell-gutter) 48px !important;
 }
 
 .topbar,
@@ -243,11 +238,11 @@
 }
 
 .app.nav-left .page-nav {
-  left: max(16px, calc((100vw - 1480px) / 2 + 18px)) !important;
+  left: 8px !important;
 }
 
 .app.nav-right .page-nav {
-  right: max(16px, calc((100vw - 1480px) / 2 + 18px)) !important;
+  right: 8px !important;
 }
 
 .app.nav-auto.nav-left .page-nav {
@@ -2492,22 +2487,6 @@
 }
 
 @media (max-width: 900px) {
-  .app.nav-always.nav-left .shell {
-    padding-left: 102px !important;
-    padding-right: 20px !important;
-  }
-
-  .app.nav-always.nav-right .shell {
-    padding-left: 20px !important;
-    padding-right: 102px !important;
-  }
-
-  .app.nav-auto .shell,
-  .app.nav-hidden .shell {
-    padding-left: 20px !important;
-    padding-right: 20px !important;
-  }
-
   .home-widgets,
   .widgets.home-widgets,
   .home-dashboard .home-widgets,

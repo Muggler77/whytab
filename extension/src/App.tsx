@@ -1448,6 +1448,8 @@ export default function App() {
   const openWidgetMenu = (event: MouseEvent, widgetKey?: WidgetKey) => {
     event.preventDefault();
     event.stopPropagation();
+    setShortcutMenu(null);
+    setPageMenu(null);
     setWidgetMenu({ x: event.clientX, y: event.clientY, widgetKey });
   };
 
@@ -1589,10 +1591,11 @@ export default function App() {
     goToPage(nextPage);
   };
 
-  const handleWidgetContextMenu = (event: MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, select, textarea")) return;
-    const widget = target.closest(".widget, .widget-sortable-shell") as HTMLElement | null;
+  const handleHomeContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target instanceof Element ? event.target : event.currentTarget;
+    if (target.closest("input, select, textarea, [contenteditable='true']")) return;
+    if (target.closest(".home-shortcut")) return;
+    const widget = target.closest<HTMLElement>("[data-widget-key]");
     openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
   };
   const widgetGridItems = enabledWidgetOrder.map((key) => {
@@ -1607,7 +1610,7 @@ export default function App() {
     };
   });
   const staticWidgetsPanel = (
-    <section className="widgets home-widgets" aria-label="主页小组件" onContextMenu={handleWidgetContextMenu}>
+    <section className="widgets home-widgets" aria-label="主页小组件">
       {widgetGridItems.map((item) => (
         <div className={`widget-sortable-shell widget-size-${item.size}`} data-widget-key={item.id} key={item.id}>
           {item.content}
@@ -1619,7 +1622,6 @@ export default function App() {
     <Suspense fallback={staticWidgetsPanel}>
       <SortableWidgetGrid
         items={widgetGridItems}
-        onContextMenu={handleWidgetContextMenu}
         onMove={(source, target) => {
           reorderWidget(source, target);
           showToast(`${widgetNames[source]}已移动`);
@@ -1726,19 +1728,14 @@ export default function App() {
           className={["workspace", "page-" + activePage, activeCustomPageId ? "page-custom" : "", pageMotion ? "page-motion-" + pageMotion : ""].filter(Boolean).join(" ")}
           onContextMenu={(event) => {
             const target = event.target as HTMLElement;
-            if (activePage === "widgets") {
-              if (target.closest("input") || target.closest("select") || target.closest("textarea")) return;
-              const widget = target.closest(".widget") as HTMLElement | null;
-              openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
-              return;
-            }
+            if (activePage === "widgets") return;
             if (target.closest(".shortcut") || target.closest(".folder-tile") || target.closest("input") || target.closest("button") || target.closest("a")) return;
             event.preventDefault();
             setPageMenu({ x: event.clientX, y: event.clientY });
           }}
         >
           {activePage === "widgets" ? (
-            <section className="home-dashboard">
+            <section className="home-dashboard" onContextMenuCapture={handleHomeContextMenu}>
               <div className="dashboard-toolbar" role="toolbar" aria-label="主页工具">
                 <button
                   type="button"
@@ -1766,6 +1763,12 @@ export default function App() {
                   event.preventDefault();
                   event.stopPropagation();
                   setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
+                }}
+                onFolderMenu={(event, folder) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setEditingFolder(folder);
+                  setDialog("folder");
                 }}
                 onMoveTile={moveHomeTile}
               />
@@ -2194,12 +2197,13 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
   );
 }
 
-function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu, onMoveTile }: {
+function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu, onFolderMenu, onMoveTile }: {
   tiles: Array<{ kind: "folder"; folder: ShortcutFolder; order: number } | { kind: "shortcut"; shortcut: Shortcut; order: number }>;
   iconSize: number;
   editing: boolean;
   onOpenFolder: (folderId: string) => void;
   onShortcutMenu: (event: MouseEvent, shortcut: Shortcut) => void;
+  onFolderMenu: (event: MouseEvent, folder: ShortcutFolder) => void;
   onMoveTile: (source?: HomeTileRef | string, target?: HomeTileRef | string) => void;
 }) {
   const [draggingKey, setDraggingKey] = useState<HomeTileRef | undefined>();
@@ -2285,6 +2289,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
               onOpenFolder(item.folder.id);
             }}
             title={item.folder.name}
+            onContextMenu={(event) => onFolderMenu(event, item.folder)}
             draggable={editing}
             onDragStart={(event) => startDrag(event, key)}
             onDragEnd={endDrag}
@@ -2363,10 +2368,8 @@ function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete 
   useEffect(() => {
     const close = () => onClose();
     window.addEventListener("click", close);
-    window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
-      window.removeEventListener("blur", close);
     };
   }, [onClose]);
 
@@ -2393,10 +2396,8 @@ function PageContextMenu({ menu, onClose, onAddFolder, onAddShortcut, onAddGroup
   useEffect(() => {
     const close = () => onClose();
     window.addEventListener("click", close);
-    window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
-      window.removeEventListener("blur", close);
     };
   }, [onClose]);
   const position = contextMenuPosition(menu.x, menu.y, 220, 260);
@@ -2463,11 +2464,9 @@ function WidgetContextMenu({ menu, size, onClose, onResize, onOpenLibrary, onRef
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("click", close);
-    window.addEventListener("blur", close);
     window.addEventListener("keydown", closeOnEscape);
     return () => {
       window.removeEventListener("click", close);
-      window.removeEventListener("blur", close);
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [onClose]);

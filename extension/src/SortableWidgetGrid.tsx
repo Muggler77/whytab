@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { WidgetKey, WidgetSize } from "./types";
 
 export type SortableWidgetGridItem = {
@@ -68,10 +68,9 @@ function SortableWidgetItem({ item }: { item: SortableWidgetGridItem }) {
   );
 }
 
-export default function SortableWidgetGrid({ items, onMove, onContextMenu }: {
+export default function SortableWidgetGrid({ items, onMove }: {
   items: SortableWidgetGridItem[];
   onMove: (source: WidgetKey, target: WidgetKey) => void;
-  onContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const [activeId, setActiveId] = useState<WidgetKey | undefined>();
   const sensors = useSensors(
@@ -96,7 +95,7 @@ export default function SortableWidgetGrid({ items, onMove, onContextMenu }: {
       onDragEnd={finishDrag}
     >
       <SortableContext items={items.map((item) => item.id)} strategy={rectSortingStrategy}>
-        <section className="widgets home-widgets layout-editing" aria-label="主页小组件" onContextMenu={onContextMenu}>
+        <section className="widgets home-widgets layout-editing" aria-label="主页小组件">
           {items.map((item) => <SortableWidgetItem item={item} key={item.id} />)}
         </section>
       </SortableContext>
