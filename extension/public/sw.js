@@ -1,6 +1,6 @@
-const CACHE_NAME = "whytab-shell-v0.2.4";
+const CACHE_NAME = "whytab-shell-v0.3.0";
 const ICON_CACHE_NAME = "whytab-icons-v1";
-const APP_SHELL = ["./", "./app.webmanifest?v=0.2.4", "./icons/icon128.png?v=0.2.4", "./wallpapers/photo/mobile/aurora-lake.webp"];
+const APP_SHELL = ["./", "./app.webmanifest?v=0.3.0", "./icons/icon128.png?v=0.3.0", "./wallpapers/photo/mobile/aurora-lake.webp"];
 const ICON_HOSTS = new Set(["cdn.simpleicons.org", "icons.duckduckgo.com", "www.google.com"]);
 const PRESERVED_CACHES = new Set([CACHE_NAME, ICON_CACHE_NAME]);
 

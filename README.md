@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.2.4**. See the [bilingual release notes](docs/releases/0.2.4.md).
+Current release: **0.3.0**. See the [bilingual release notes](docs/releases/0.3.0.md).
 
 ## Product and Framework
 
@@ -91,6 +91,15 @@ https://why-tool.com/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.3.0 全新界面与交互系统
+
+- 使用单一设计系统重做主页、网站、工具、资源中心、设置、账号同步和全部弹层，移除旧版多层 CSS 覆盖。
+- 时间与搜索严格沿页面中心轴排列；桌面导航贴边垂直居中，手机和平板使用底部导航。
+- 小组件改为自适应 12 列网格，统一卡片、图标、间距和功能色，并保留拖拽、尺寸调整和右键设置。
+- 网站页、快捷图标、文件夹和 Dock 使用同一图标尺寸与圆润比例，右键菜单和空状态重新设计。
+- 手机端可见操作区至少 44px，补充键盘跳转、焦点状态、密码显隐、弹窗语义和减少动态效果支持。
+- 生产 CSS 体积由旧版约 249 KB 降至约 66 KB，改善手机端加载和样式解析速度。
 
 ### 0.2.4 边缘导航垂直居中
 

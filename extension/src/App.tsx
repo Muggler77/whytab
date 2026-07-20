@@ -506,6 +506,13 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
+    document.documentElement.dataset.whytabTheme = state.settings.theme;
+    return () => {
+      delete document.documentElement.dataset.whytabTheme;
+    };
+  }, [state.settings.theme]);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
@@ -1636,10 +1643,11 @@ export default function App() {
       style={backgroundStyle}
       onWheel={handlePageWheel}
     >
+      <a className="skip-link" href="#whytab-workspace">跳到主要内容</a>
       <div className="shell">
         <header className="topbar">
           <div className="brand">
-            <span className="mark">w</span>
+            <span className="mark"><img src="./icons/icon32.png" alt="" /></span>
             <div>
               <h1>whytab</h1>
               <p>{chinaMiniDateText}</p>
@@ -1650,7 +1658,6 @@ export default function App() {
               <UserCircle size={17} />
               <span>{sync.user?.email || "未登录"}</span>
             </button>
-            <button className="top-action sync" aria-label="同步" title="同步" onClick={() => setDialog("sync")}><RefreshCcw size={17} /></button>
           </div>
         </header>
 
@@ -1669,7 +1676,7 @@ export default function App() {
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); runSearch(); } }}
               placeholder={`${searchEngines[currentSearchEngine].label}搜索`}
             />
-            <button type="button" className="search-submit" title="搜索" onClick={runSearch}>搜索</button>
+            <button type="button" className="search-submit" aria-label="搜索" title="搜索" onClick={runSearch}><Search size={18} /></button>
           </div>
         </section>
 
@@ -1725,6 +1732,7 @@ export default function App() {
         {activePage === "shortcuts" && state.settings.dockPosition === "top" && <Dock shortcuts={pinned} />}
 
         <section
+          id="whytab-workspace"
           className={["workspace", "page-" + activePage, activeCustomPageId ? "page-custom" : "", pageMotion ? "page-motion-" + pageMotion : ""].filter(Boolean).join(" ")}
           onContextMenu={(event) => {
             const target = event.target as HTMLElement;
@@ -3847,6 +3855,7 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -3878,7 +3887,7 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
       <div className="sync-hero">
         <div className="sync-hero-icon"><Database size={24} /></div>
         <div>
-          <span>WHY TAB CLOUD</span>
+          <span>WHYTAB CLOUD</span>
           <h3>{sync.user ? "账号已连接" : authMode === "login" ? "登录 whytab 账号" : "创建 whytab 账号"}</h3>
           <p>{sync.user ? "当前设备可以和云端数据保持一致。" : "登录后可在电脑、手机和 iPad 间同步快捷方式、小组件、笔记和设置。"}</p>
         </div>
@@ -3961,13 +3970,22 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
             <div>
               <KeyRound size={17} />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onKeyDown={handlePasswordKeyDown}
                 placeholder={authMode === "login" ? "输入账号密码" : "设置登录密码"}
               />
+              <button
+                type="button"
+                className="sync-password-toggle"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                title={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </div>
           </label>
           <p className="sync-auth-note">
@@ -4006,12 +4024,20 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
 }
 
 function DialogShell({ title, onClose, children, className }: { title: string; onClose: () => void; children: React.ReactNode; className?: string }) {
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
   return createPortal(
-    <div className={`overlay ${className || ""}`.trim()} role="dialog" aria-modal="true" onClick={onClose}>
-      <section className="dialog" onClick={(event) => event.stopPropagation()}>
+    <div className={`overlay ${className || ""}`.trim()} onClick={onClose}>
+      <section className="dialog" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <header>
           <h2>{title}</h2>
-          <button title="关闭" onClick={onClose}><X size={18} /></button>
+          <button type="button" aria-label="关闭" title="关闭" onClick={onClose}><X size={18} /></button>
         </header>
         <div className="dialog-body">{children}</div>
       </section>
