@@ -2692,7 +2692,7 @@ function LayerRail({ activeLayer, groups, shortcuts, onSelect, onAddGroup, onRen
   );
 }
 
-function Widget({ title, action, children, tone = "default", size = "medium", widgetKey }: { title: string; action?: React.ReactNode; children: React.ReactNode; tone?: string; size?: WidgetSize; widgetKey?: WidgetKey }) {
+function Widget({ title, meta, action, children, tone = "default", size = "medium", widgetKey }: { title: string; meta?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; tone?: string; size?: WidgetSize; widgetKey?: WidgetKey }) {
   const widgetMeta = widgetKey ? widgetLibraryMeta[widgetKey] : undefined;
   const WidgetIcon = widgetMeta?.Icon;
   return (
@@ -2709,7 +2709,10 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
       <div className="widget-title">
         <div className="widget-heading">
           {WidgetIcon && <span className="widget-symbol"><WidgetIcon size={17} /></span>}
-          <h3>{title}</h3>
+          <div className="widget-heading-copy">
+            <h3>{title}</h3>
+            {meta && <span className="widget-meta">{meta}</span>}
+          </div>
         </div>
         <div className="widget-actions">
           {action}
@@ -2733,8 +2736,9 @@ function WeatherWidget({ widgetKey, size, weather, city, useLocation, refreshing
     .filter(Boolean)
     .slice(0, 2)
     .join(" · ") || placeLabel;
+  const precipitation = weather?.forecast?.[0]?.precipitationProbability;
   return (
-    <Widget title="天气" widgetKey={widgetKey} tone={`weather weather-${weatherTone}`} size={size} action={<button title={refreshing ? "正在刷新" : "刷新天气"} disabled={refreshing} onClick={() => void onRefresh()}><RefreshCcw size={14} className={refreshing ? "spin" : undefined} /></button>}>
+    <Widget title="天气" meta={weather ? "实时" : "连接中"} widgetKey={widgetKey} tone={`weather weather-${weatherTone}`} size={size} action={<button title={refreshing ? "正在刷新" : "刷新天气"} disabled={refreshing} onClick={() => void onRefresh()}><RefreshCcw size={14} className={refreshing ? "spin" : undefined} /></button>}>
       <div className="weather-scene" aria-hidden="true">
         <span className="weather-sun" />
         <span className="weather-cloud one" />
@@ -2747,11 +2751,19 @@ function WeatherWidget({ widgetKey, size, weather, city, useLocation, refreshing
       <a className={`weather-card ${weather ? "" : "is-loading"}`} href={source} target="_blank" rel="noreferrer" title="打开天气数据来源">
         {weather ? (
           <>
-            <div className="weather-line">
-              <strong>{Math.round(weather.temperature)}°</strong>
-              <span>{weatherLabel(weather.weatherCode)}</span>
+            <div className="weather-primary">
+              <div className="weather-line">
+                <strong>{Math.round(weather.temperature)}°</strong>
+                <span>{weatherLabel(weather.weatherCode)}</span>
+              </div>
+              <p>{`${useLocation ? "定位" : "城市"} · ${compactPlace}`}</p>
             </div>
-            <p>{`${useLocation ? "定位" : "城市"} · ${compactPlace} · 风速 ${weather.windSpeed} km/h`}</p>
+            {size !== "small" && (
+              <div className="weather-facts" aria-label="当前天气详情">
+                <span><small>风速</small><strong>{Math.round(weather.windSpeed)}<i>km/h</i></strong></span>
+                <span><small>降水</small><strong>{precipitation ?? 0}<i>%</i></strong></span>
+              </div>
+            )}
           </>
         ) : (
           <div className="weather-loading-state">
@@ -2769,6 +2781,7 @@ function WeatherWidget({ widgetKey, size, weather, city, useLocation, refreshing
             return (
               <a className={`forecast-${dayTone}`} href={source} target="_blank" rel="noreferrer" key={day.date} title={`${day.date} ${weatherLabel(day.weatherCode)}`}>
                 <span>{date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</span>
+                <i className="forecast-mark" aria-hidden="true" />
                 <strong>{Math.round(day.temperatureMax)}°</strong>
                 <small>{Math.round(day.temperatureMin)}°</small>
               </a>
@@ -2830,14 +2843,17 @@ function CalendarWidget({ widgetKey, size, date, state, updateState }: { widgetK
 
   const todayKey = calendarDateKey(date);
   const weekdayLabel = date.toLocaleDateString("zh-CN", { weekday: "long" });
+  const monthPrefix = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const monthRecordCount = Object.keys(records).filter((key) => key.startsWith(monthPrefix)).length;
 
   if (size === "small") {
     return (
-      <Widget title={(date.getMonth() + 1) + " 月"} widgetKey={widgetKey} tone="calendar" size={size} action={<button type="button" title="记录今天" onClick={() => openDate(todayKey)}><CalendarDays size={16} /></button>}>
+      <Widget title={(date.getMonth() + 1) + " 月"} meta={date.getFullYear()} widgetKey={widgetKey} tone="calendar" size={size} action={<button type="button" title="记录今天" onClick={() => openDate(todayKey)}><CalendarDays size={16} /></button>}>
         <button type="button" className="calendar-mini-card" onClick={() => openDate(todayKey)} title={records[todayKey] || "点击记录今天"}>
+          <span className="calendar-mini-month">{date.toLocaleDateString("zh-CN", { month: "short" })}</span>
           <strong>{date.getDate()}</strong>
-          <span>{weekdayLabel}</span>
-          {records[todayKey] && <small>{records[todayKey]}</small>}
+          <span className="calendar-mini-weekday">{weekdayLabel}</span>
+          <small>{records[todayKey] || "今天"}</small>
         </button>
         {editingDate && (
           <DialogShell title={calendarDateLabel(editingDate)} onClose={() => setEditingDate(undefined)} className="widget-popover calendar-popover">
@@ -2855,23 +2871,33 @@ function CalendarWidget({ widgetKey, size, date, state, updateState }: { widgetK
   }
 
   return (
-    <Widget title={(date.getMonth() + 1) + " 月"} widgetKey={widgetKey} tone="calendar" size={size} action={<button type="button" title="记录今天" onClick={() => openDate(todayKey)}><CalendarDays size={16} /></button>}>
-      <div className="calendar-grid calendar-clickable">
-        {["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day} className="muted calendar-weekday">{day}</span>)}
-        {days.map((item, index) => item ? (
-          <button
-            type="button"
-            key={item.key}
-            className={[
-              item.day === date.getDate() ? "today" : "",
-              records[item.key] ? "has-record" : ""
-            ].filter(Boolean).join(" ")}
-            onClick={() => openDate(item.key)}
-            title={records[item.key] || "点击记录当天事项"}
-          >
-            <span>{item.day}</span>
+    <Widget title={(date.getMonth() + 1) + " 月"} meta={`${monthRecordCount} 条记录`} widgetKey={widgetKey} tone="calendar" size={size} action={<button type="button" title="记录今天" onClick={() => openDate(todayKey)}><CalendarDays size={16} /></button>}>
+      <div className={`calendar-layout calendar-layout-${size}`}>
+        {size === "wide" && (
+          <button type="button" className="calendar-today-panel" onClick={() => openDate(todayKey)} title={records[todayKey] || "点击记录今天"}>
+            <span>{date.getFullYear()}</span>
+            <strong>{date.getDate()}</strong>
+            <b>{weekdayLabel}</b>
+            <small>{records[todayKey] || "给今天留下一条记录"}</small>
           </button>
-        ) : <span key={"empty-" + index} className="calendar-empty" />)}
+        )}
+        <div className="calendar-grid calendar-clickable">
+          {["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day} className="muted calendar-weekday">{day}</span>)}
+          {days.map((item, index) => item ? (
+            <button
+              type="button"
+              key={item.key}
+              className={[
+                item.day === date.getDate() ? "today" : "",
+                records[item.key] ? "has-record" : ""
+              ].filter(Boolean).join(" ")}
+              onClick={() => openDate(item.key)}
+              title={records[item.key] || "点击记录当天事项"}
+            >
+              <span>{item.day}</span>
+            </button>
+          ) : <span key={"empty-" + index} className="calendar-empty" />)}
+        </div>
       </div>
       {editingDate && (
         <DialogShell title={calendarDateLabel(editingDate)} onClose={() => setEditingDate(undefined)} className="widget-popover calendar-popover">
@@ -2913,31 +2939,38 @@ function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: W
   };
   const featured = items[0];
   return (
-    <Widget title="倒计时" widgetKey={widgetKey} tone="countdown" size={size} action={<button title="添加" onClick={() => setEditorOpen(true)}><Plus size={14} /></button>}>
+    <Widget title="倒计时" meta={`${items.length} 个日期`} widgetKey={widgetKey} tone="countdown" size={size} action={<button title="添加" onClick={() => setEditorOpen(true)}><Plus size={14} /></button>}>
       {featured ? (() => {
         const days = countdownDays(featured);
         return (
           <div className="countdown-feature">
-            <div className="countdown-value"><strong>{Math.abs(days)}</strong><span>天</span></div>
+            <div className="countdown-orbit" aria-label={`${Math.abs(days)} 天`}>
+              <span className="countdown-orbit-marker" aria-hidden="true" />
+              <div className="countdown-value"><strong>{Math.abs(days)}</strong><span>天</span></div>
+            </div>
             <div className="countdown-copy">
+              <span className="countdown-status">{days >= 0 ? "即将到来" : "已经发生"}</span>
               <strong>{featured.title}</strong>
-              <span>{days >= 0 ? "距离目标日" : "已经过去"}</span>
-              <time dateTime={featured.date}>{new Date(`${featured.date}T00:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}</time>
+              <time dateTime={featured.date}><CalendarDays size={13} />{new Date(`${featured.date}T00:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}</time>
             </div>
             <button type="button" title="删除倒计时" onClick={() => removeCountdown(featured.id)}><X size={13} /></button>
           </div>
         );
       })() : <button type="button" className="countdown-empty" onClick={() => setEditorOpen(true)}><Plus size={18} /><span>添加一个重要日期</span></button>}
-      {items.slice(1).map((item) => {
-        const days = countdownDays(item);
-        return (
-          <div className="list-row" key={item.id}>
-            <span>{item.title}</span>
-            <strong>{days >= 0 ? `${days} 天` : `已过 ${Math.abs(days)} 天`}</strong>
-            <button type="button" title="删除倒计时" onClick={() => removeCountdown(item.id)}><X size={13} /></button>
-          </div>
-        );
-      })}
+      {items.length > 1 && (
+        <div className="countdown-list">
+          {items.slice(1).map((item) => {
+            const days = countdownDays(item);
+            return (
+              <div className="list-row" key={item.id}>
+                <span>{item.title}</span>
+                <strong>{days >= 0 ? `${days} 天` : `已过 ${Math.abs(days)} 天`}</strong>
+                <button type="button" title="删除倒计时" onClick={() => removeCountdown(item.id)}><X size={13} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {editorOpen && (
         <DialogShell title="添加倒计时" onClose={() => setEditorOpen(false)} className="widget-popover countdown-popover">
           <form className="countdown-editor" onSubmit={(event) => { event.preventDefault(); addCountdown(); }}>
@@ -2966,6 +2999,7 @@ function TodoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widget
   const todos = state.todos.filter((item) => !item.deletedAt).sort((a, b) => a.order - b.order);
   const activeCount = todos.filter((todo) => !todo.done).length;
   const doneCount = todos.length - activeCount;
+  const completionPercent = todos.length ? Math.round((doneCount / todos.length) * 100) : 0;
   const visibleTodos = todos.slice(0, 3);
   const add = () => {
     if (!text.trim()) return;
@@ -3009,23 +3043,39 @@ function TodoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widget
   return (
     <Widget
       title="To Do"
+      meta={`${activeCount} 待处理`}
       widgetKey={widgetKey}
       tone="todo"
       size={size}
       action={<button type="button" className="todo-count" title="管理任务" onClick={() => setPanelOpen(true)}>{activeCount}/{todos.length}</button>}
     >
-      <div className="todo-progress" aria-label={`已完成 ${doneCount} 项，共 ${todos.length} 项`}>
-        <span><strong>{doneCount}</strong> 已完成</span>
-        <i><b style={{ width: `${todos.length ? Math.round((doneCount / todos.length) * 100) : 0}%` }} /></i>
-        <small>{activeCount} 待处理</small>
-      </div>
-      <div className="input-row">
-        <input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && add()} placeholder="新增任务" />
-        <button type="button" title="添加" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); add(); }}><Plus size={14} /></button>
-      </div>
-      <div className="todo-preview">
-        {visibleTodos.length ? todoRows(visibleTodos) : <button type="button" className="todo-empty" onClick={() => setPanelOpen(true)}>今天还没有任务</button>}
-        {todos.length > visibleTodos.length && <button type="button" className="todo-more" onClick={() => setPanelOpen(true)}>还有 {todos.length - visibleTodos.length} 条，点击管理</button>}
+      <div className={`todo-dashboard todo-dashboard-${size}`}>
+        <div className="todo-overview" aria-label={`已完成 ${doneCount} 项，共 ${todos.length} 项`}>
+          <button
+            type="button"
+            className="todo-progress-dial"
+            style={{ "--todo-progress": `${completionPercent * 3.6}deg` } as React.CSSProperties}
+            onClick={() => setPanelOpen(true)}
+            title="管理全部任务"
+          >
+            <strong>{completionPercent}</strong><span>%</span>
+          </button>
+          <div>
+            <small>今日进度</small>
+            <strong>{doneCount} / {todos.length}</strong>
+            <span>{activeCount ? `还有 ${activeCount} 项` : "全部完成"}</span>
+          </div>
+        </div>
+        <div className="todo-workspace">
+          <div className="input-row">
+            <input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && add()} placeholder="新增任务" />
+            <button type="button" title="添加" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); add(); }}><Plus size={14} /></button>
+          </div>
+          <div className="todo-preview">
+            {visibleTodos.length ? todoRows(visibleTodos) : <button type="button" className="todo-empty" onClick={() => setPanelOpen(true)}>今天还没有任务</button>}
+            {todos.length > visibleTodos.length && <button type="button" className="todo-more" onClick={() => setPanelOpen(true)}>还有 {todos.length - visibleTodos.length} 条，点击管理</button>}
+          </div>
+        </div>
       </div>
       {panelOpen && (
         <DialogShell title="To Do" onClose={() => setPanelOpen(false)} className="widget-popover todo-popover">
@@ -3073,10 +3123,16 @@ function PhotoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widge
     }));
   };
   return (
-    <Widget title="照片" widgetKey={widgetKey} tone="photo" size={size} action={image ? <button title="清除照片" onClick={clearPhoto}><X size={14} /></button> : undefined}>
+    <Widget title="照片" meta={image ? title : "未设置"} widgetKey={widgetKey} tone={image ? "photo photo-filled" : "photo"} size={size} action={image ? <button title="清除照片" onClick={clearPhoto}><X size={14} /></button> : undefined}>
       <div className={`photo-frame ${image ? "has-photo" : ""}`} style={image ? { "--photo-image": `url(${image})` } as React.CSSProperties : undefined}>
-        {image ? <img src={image} alt={title} /> : (
+        {image ? (
+          <>
+            <img src={image} alt={title} />
+            <div className="photo-caption"><span>我的相册</span><strong>{title}</strong></div>
+          </>
+        ) : (
           <label className="photo-upload">
+            <span className="photo-stack" aria-hidden="true"><i /><i /></span>
             <ImageIcon size={28} />
             <span>上传照片</span>
             <input type="file" accept="image/*" onChange={(event) => void savePhoto(event.target.files?.[0])} />
@@ -3089,13 +3145,15 @@ function PhotoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widge
 
 function QuoteWidget({ widgetKey, size, date }: { widgetKey: WidgetKey; size: WidgetSize; date: Date }) {
   const [offset, setOffset] = useState(0);
-  const quote = dailyQuotes[(Math.floor(date.getTime() / 86400000) + offset) % dailyQuotes.length];
+  const quoteIndex = (Math.floor(date.getTime() / 86400000) + offset) % dailyQuotes.length;
+  const quote = dailyQuotes[quoteIndex];
   const nextQuote = () => setOffset((value) => (value + 1) % dailyQuotes.length);
   return (
-    <Widget title="每日灵感" widgetKey={widgetKey} tone="quote" size={size} action={<button type="button" title="换一句" onClick={nextQuote}><Shuffle size={16} /></button>}>
+    <Widget title="每日灵感" meta={`第 ${quoteIndex + 1} 则`} widgetKey={widgetKey} tone="quote" size={size} action={<button type="button" title="换一句" onClick={nextQuote}><Shuffle size={16} /></button>}>
       <button type="button" className="quote-card" onClick={nextQuote} title="点击换一句">
+        <span className="quote-mark" aria-hidden="true">“</span>
         <strong>{quote.text}</strong>
-        <span>{quote.source}</span>
+        <span className="quote-source"><i />{quote.source}</span>
       </button>
     </Widget>
   );
@@ -3122,13 +3180,21 @@ function FocusWidget({ widgetKey, size }: { widgetKey: WidgetKey; size: WidgetSi
   const rest = (seconds % 60).toString().padStart(2, "0");
   const progress = 1 - seconds / (25 * 60);
   return (
-    <Widget title="专注" widgetKey={widgetKey} tone="focus" size={size} action={<Clock3 size={16} />}>
+    <Widget title="专注" meta={running ? "进行中" : "25 分钟"} widgetKey={widgetKey} tone="focus" size={size} action={<Clock3 size={16} />}>
       <div className="focus-widget">
-        <button className="focus-ring" style={{ "--progress": String(progress * 360) + "deg" } as React.CSSProperties} onClick={() => setRunning((value) => !value)} title={running ? "暂停" : "开始"}>
-          <strong>{minutes}:{rest}</strong>
-          <span>{running ? "暂停" : "开始"}</span>
-        </button>
-        <button className="focus-reset" onClick={() => { setRunning(false); setSeconds(25 * 60); }}><TimerReset size={14} /> 重置</button>
+        <div className="focus-dial-wrap">
+          <span className="focus-orbit" aria-hidden="true" />
+          <button className="focus-ring" style={{ "--progress": String(progress * 360) + "deg" } as React.CSSProperties} onClick={() => setRunning((value) => !value)} title={running ? "暂停" : "开始"}>
+            <strong>{minutes}:{rest}</strong>
+            <span>{running ? "暂停" : "开始"}</span>
+          </button>
+        </div>
+        <div className="focus-session">
+          <small>当前周期</small>
+          <strong>{running ? "保持节奏" : "准备开始"}</strong>
+          <div className="focus-session-dots" aria-hidden="true"><i className={progress > 0 ? "active" : ""} /><i /><i /><i /></div>
+          <button className="focus-reset" onClick={() => { setRunning(false); setSeconds(25 * 60); }}><TimerReset size={14} /> 重置</button>
+        </div>
       </div>
     </Widget>
   );
@@ -3155,18 +3221,38 @@ function WorldClockWidget({ widgetKey, size, date, timeZone }: { widgetKey: Widg
     month: "numeric",
     day: "numeric"
   }).format(date);
+  const primaryTimeParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: zones[0].zone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const dialHour = Number(primaryTimeParts.find((part) => part.type === "hour")?.value || 0) % 12;
+  const dialMinute = Number(primaryTimeParts.find((part) => part.type === "minute")?.value || 0);
+  const dialStyle = {
+    "--clock-hour": `${dialHour * 30 + dialMinute * 0.5}deg`,
+    "--clock-minute": `${dialMinute * 6}deg`
+  } as React.CSSProperties;
 
   return (
-    <Widget title="世界时钟" widgetKey={widgetKey} tone="clock" size={size} action={<Clock3 size={16} />}>
-      <div className="world-clock-primary">
-        <strong>{timeFor(zones[0].zone, true)}</strong>
-        <span>{zones[0].city} · {dayFor(zones[0].zone)}</span>
+    <Widget title="世界时钟" meta={`${zones.length} 个城市`} widgetKey={widgetKey} tone="clock" size={size} action={<Clock3 size={16} />}>
+      <div className="world-clock-hero">
+        <div className="world-clock-dial" style={dialStyle} aria-hidden="true">
+          <i className="clock-hand clock-hand-hour" />
+          <i className="clock-hand clock-hand-minute" />
+          <b />
+        </div>
+        <div className="world-clock-primary">
+          <strong>{timeFor(zones[0].zone, true)}</strong>
+          <span>{zones[0].city}</span>
+          <small>{dayFor(zones[0].zone)}</small>
+        </div>
       </div>
       <div className="world-clock-list">
         {zones.slice(1).map((item) => (
           <div key={item.zone}>
-            <span>{item.city}</span>
-            <strong>{timeFor(item.zone)}</strong>
+            <span><strong>{item.city}</strong><small>{dayFor(item.zone)}</small></span>
+            <time>{timeFor(item.zone)}</time>
           </div>
         ))}
       </div>
@@ -3180,20 +3266,25 @@ function MemoWidget({ widgetKey, size, state, updateState }: {
   state: AppState;
   updateState: (updater: (state: AppState) => AppState) => void;
 }) {
+  const note = state.settings.quickNote || "";
   return (
-    <Widget title="便签" widgetKey={widgetKey} tone="memo" size={size} action={<FileText size={16} />}>
-      <textarea
-        className="memo-editor"
-        value={state.settings.quickNote || ""}
-        onChange={(event) => {
-          const quickNote = event.target.value;
-          updateState((current) => ({
-            ...current,
-            settings: { ...current.settings, quickNote, updatedAt: nowIso() }
-          }));
-        }}
-        placeholder="写下此刻最重要的事"
-      />
+    <Widget title="便签" meta={`${note.length} 字`} widgetKey={widgetKey} tone="memo" size={size} action={<FileText size={16} />}>
+      <div className="memo-paper">
+        <span className="memo-pin" aria-hidden="true" />
+        <textarea
+          className="memo-editor"
+          value={note}
+          onChange={(event) => {
+            const quickNote = event.target.value;
+            updateState((current) => ({
+              ...current,
+              settings: { ...current.settings, quickNote, updatedAt: nowIso() }
+            }));
+          }}
+          placeholder="写下此刻最重要的事"
+        />
+        <footer><span>{new Date().toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}</span><span>{note.length} 字</span></footer>
+      </div>
     </Widget>
   );
 }
@@ -3204,14 +3295,21 @@ function YearProgressWidget({ widgetKey, size, date }: { widgetKey: WidgetKey; s
   const progress = Math.min(1, Math.max(0, (date.getTime() - start) / (end - start)));
   const elapsedDays = Math.floor((date.getTime() - start) / 86400000) + 1;
   const totalDays = Math.round((end - start) / 86400000);
+  const completedWeeks = Math.round(progress * 52);
 
   return (
-    <Widget title={`${date.getFullYear()} 年`} widgetKey={widgetKey} tone="year" size={size} action={<TrendingUp size={16} />}>
-      <div className="year-progress-value">{(progress * 100).toFixed(1)}<span>%</span></div>
-      <div className="year-progress-track"><i style={{ width: `${progress * 100}%` }} /></div>
+    <Widget title={`${date.getFullYear()} 年`} meta={`剩余 ${totalDays - elapsedDays} 天`} widgetKey={widgetKey} tone="year" size={size} action={<TrendingUp size={16} />}>
+      <div className="year-progress-hero">
+        <div className="year-progress-value">{(progress * 100).toFixed(1)}<span>%</span></div>
+        <span>本年度已走过<br />第 {elapsedDays} 天</span>
+      </div>
+      <div className="year-week-grid" aria-label={`已完成约 ${completedWeeks} 周，共 52 周`}>
+        {Array.from({ length: 52 }, (_, index) => <i className={index < completedWeeks ? "complete" : ""} key={index} />)}
+      </div>
       <div className="year-progress-meta">
-        <span>第 {elapsedDays} 天</span>
-        <span>剩余 {totalDays - elapsedDays} 天</span>
+        <span>01 月</span>
+        <span>52 周</span>
+        <span>12 月</span>
       </div>
     </Widget>
   );
@@ -3229,16 +3327,31 @@ function CalculatorWidget({ widgetKey, size }: { widgetKey: WidgetKey; size: Wid
       : operator === "-" ? a - b
         : operator === "×" ? a * b
           : b === 0 ? undefined : a / b;
+  const resultLabel = result === undefined ? "--" : Number(result.toFixed(6)).toLocaleString("zh-CN");
 
   return (
-    <Widget title="计算器" widgetKey={widgetKey} tone="calculator" size={size} action={<Calculator size={16} />}>
-      <div className="calculator-result">{result === undefined ? "--" : Number(result.toFixed(6)).toLocaleString("zh-CN")}</div>
-      <div className="calculator-inputs">
-        <input inputMode="decimal" value={left} onChange={(event) => setLeft(event.target.value)} aria-label="第一个数字" />
-        <select value={operator} onChange={(event) => setOperator(event.target.value as "+" | "-" | "×" | "÷")} aria-label="运算符">
-          {["+", "-", "×", "÷"].map((item) => <option value={item} key={item}>{item}</option>)}
-        </select>
-        <input inputMode="decimal" value={right} onChange={(event) => setRight(event.target.value)} aria-label="第二个数字" />
+    <Widget title="计算器" meta={`${operator} 运算`} widgetKey={widgetKey} tone="calculator" size={size} action={<Calculator size={16} />}>
+      <div className="calculator-screen">
+        <small>{left || "0"} {operator} {right || "0"}</small>
+        <div className="calculator-result" aria-live="polite">{resultLabel}</div>
+      </div>
+      <div className="calculator-controls">
+        <div className="calculator-inputs">
+          <label><span>A</span><input inputMode="decimal" value={left} onChange={(event) => setLeft(event.target.value)} aria-label="第一个数字" /></label>
+          <label><span>B</span><input inputMode="decimal" value={right} onChange={(event) => setRight(event.target.value)} aria-label="第二个数字" /></label>
+        </div>
+        <div className="calculator-operators" role="radiogroup" aria-label="运算符">
+          {["+", "-", "×", "÷"].map((item) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={operator === item}
+              className={operator === item ? "active" : ""}
+              onClick={() => setOperator(item as "+" | "-" | "×" | "÷")}
+              key={item}
+            >{item}</button>
+          ))}
+        </div>
       </div>
     </Widget>
   );
@@ -3294,21 +3407,29 @@ function RatesWidget({ widgetKey, size, rates, message, refreshing, onRefresh }:
     const cny = numericAmount * cnyPerUnit[fromCurrency];
     return cny / cnyPerUnit[target];
   };
+  const updatedLabel = rates?.updatedAt
+    ? new Date(rates.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : "等待数据";
 
   return (
-    <Widget title="中行汇率" widgetKey={widgetKey} tone="rates" size={size} action={<button type="button" title="刷新汇率" disabled={refreshing} onClick={() => void onRefresh()}><RefreshCcw size={14} className={refreshing ? "spin" : undefined} /></button>}>
-      {visibleRows.length ? visibleRows.map((row) => (
-        <div className="rate-row" key={row.currency} title={`${row.name} 买入 ${row.buyingRate || "--"}，卖出 ${row.sellingRate || "--"}`}>
-          <strong>{row.currency}</strong>
-          <span><em>买</em>{row.buyingRate || "--"}</span>
-          <span><em>卖</em>{row.sellingRate || "--"}</span>
+    <Widget title="中行汇率" meta={updatedLabel} widgetKey={widgetKey} tone="rates" size={size} action={<button type="button" title="刷新汇率" disabled={refreshing} onClick={() => void onRefresh()}><RefreshCcw size={14} className={refreshing ? "spin" : undefined} /></button>}>
+      {visibleRows.length ? (
+        <div className="rate-table">
+          <div className="rate-head"><span>币种</span><span>现汇买入</span><span>现汇卖出</span></div>
+          {visibleRows.map((row) => (
+            <div className="rate-row" key={row.currency} title={`${row.name} 买入 ${row.buyingRate || "--"}，卖出 ${row.sellingRate || "--"}`}>
+              <strong><i>{row.currency.slice(0, 1)}</i><span>{row.currency}<small>{row.name}</small></span></strong>
+              <span>{row.buyingRate || "--"}</span>
+              <span>{row.sellingRate || "--"}</span>
+            </div>
+          ))}
         </div>
-      )) : <p>{message || "汇率暂时不可用"}</p>}
+      ) : <p className="rate-empty">{message || "汇率暂时不可用"}</p>}
       {size === "wide" && (
         <div className="converter">
           <div className="converter-input">
-            <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-            <select value={fromCurrency} onChange={(event) => setFromCurrency(event.target.value as CurrencyCode)}>
+            <input aria-label="换算金额" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            <select aria-label="换算币种" value={fromCurrency} onChange={(event) => setFromCurrency(event.target.value as CurrencyCode)}>
               {currencies.map((currency) => <option key={currency} value={currency}>{currencyNames[currency]}</option>)}
             </select>
           </div>

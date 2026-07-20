@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.4.1**. See the [bilingual release notes](docs/releases/0.4.1.md).
+Current release: **0.5.0**. See the [bilingual release notes](docs/releases/0.5.0.md).
 
 ## Product and Framework
 
@@ -21,6 +21,7 @@ whytab is both a ready-to-use product and an open-source configurable framework.
 - Editable home workspace: enable layout editing to reorder shortcuts and widgets without changing their data.
 - Full-bleed website icons: real site artwork fills the icon itself without an extra colored container.
 - Translucent workspace: neutral, wallpaper-aware materials keep cards readable without imposing random widget colors.
+- Purpose-built widgets: all 12 widgets use distinct layouts suited to their content instead of repeating one generic card template.
 - Curated wallpaper library: 32 built-in choices, including 20 original desktop/mobile pairs across Japanese, illustrated, cat, and cinematic styles.
 - Personal pages: add pages to the left navigation, assign shortcut groups to them, or hide optional built-in pages.
 - Cross-platform usage: works on macOS, Windows, iOS, iPadOS, Android, and other modern browsers depending on extension/PWA support.
@@ -94,6 +95,15 @@ https://why-tool.com/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.0 差异化小组件
+
+- 12 个小组件不再套用同一种内容模板，每个组件都按自身用途重新设计信息结构。
+- 天气增加实时概况和天气趋势；日历改为日期撕页与月历组合；待办增加环形完成进度和任务工作区。
+- 倒计时、专注、世界时钟、年度进度分别采用轨道、计时环、模拟钟面和 52 周点阵表达时间。
+- 照片、每日灵感和便签分别使用画框、编辑排版和横线纸语言；计算器与汇率改为更适合操作和扫读的数据面板。
+- 紧凑、标准、展开尺寸会按可用宽度自动收敛次要信息，右键设置、拖拽和尺寸切换保持不变。
+- 数据结构继续使用版本 1；不修改注册、登录、账号隔离、同步协议或本地存储逻辑。
 
 ### 0.4.1 清晰图标与稳定右键菜单
 
