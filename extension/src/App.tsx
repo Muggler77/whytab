@@ -59,7 +59,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { createPortal } from "react-dom";
 import { downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
-import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText } from "./importers";
+import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText, siteIconCandidatesFor } from "./importers";
 import { MIGRATION_BACKUP_KEY, type StateBackup } from "./migrations";
 import { fetchRates, getCachedRates } from "./rates";
 import { DEFAULT_AUTH_REDIRECT_URL } from "./projectConfig";
@@ -98,7 +98,8 @@ const HOSTED_APP_ORIGIN = "https://why-tool.com";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-const ICON_LOAD_TIMEOUT_MS = 1400;
+const ICON_LOAD_TIMEOUT_MS = 3600;
+const MIN_SHARP_ICON_SIZE = 128;
 const SortableWidgetGrid = lazy(() => import("./SortableWidgetGrid"));
 
 const isFreshCache = (updatedAt?: string, maxAge = WEATHER_CACHE_MAX_AGE_MS) => {
@@ -237,16 +238,42 @@ const builtInShortcutIconFor = (iconUrl?: string) => {
   return builtInShortcutIcons.find((icon) => icon.id === iconUrl.slice(builtInIconPrefix.length));
 };
 
+type IconCandidate = {
+  url: string;
+  kind: "site-art" | "brand-mark";
+  vector: boolean;
+};
+
+const resolvedIconCache = new Map<string, string>();
+
+const isVectorIconUrl = (url: string) => /(?:\.svg(?:[?#]|$)|^data:image\/svg\+xml)/i.test(url);
+
 const iconCandidatesFor = (url: string, iconUrl?: string, title = "") => {
   const builtInIcon = builtInShortcutIconFor(iconUrl);
-  const candidates = [
-    iconUrl && !builtInIcon && !isGeneratedFavicon(iconUrl) ? iconUrl : undefined,
-    faviconFor(url),
-    fallbackFaviconFor(url),
-    curatedIconFor(url, title),
-    iconUrl && isGeneratedFavicon(iconUrl) ? iconUrl : undefined
-  ].filter((item): item is string => Boolean(item));
-  return Array.from(new Set(candidates));
+  const directCandidates = siteIconCandidatesFor(url);
+  const curated = curatedIconFor(url, title);
+  const serviceIcon = faviconFor(url);
+  const fallbackIcon = fallbackFaviconFor(url);
+  const candidates: Array<IconCandidate | undefined> = [
+    iconUrl && !builtInIcon && !isGeneratedFavicon(iconUrl)
+      ? { url: iconUrl, kind: /cdn\.simpleicons\.org/i.test(iconUrl) ? "brand-mark" : "site-art", vector: isVectorIconUrl(iconUrl) }
+      : undefined,
+    curated ? { url: curated, kind: "brand-mark", vector: true } : undefined,
+    serviceIcon ? { url: serviceIcon, kind: "site-art", vector: false } : undefined,
+    directCandidates[0] ? { url: directCandidates[0], kind: "site-art", vector: false } : undefined,
+    directCandidates[1] ? { url: directCandidates[1], kind: "site-art", vector: false } : undefined,
+    directCandidates[2] ? { url: directCandidates[2], kind: "site-art", vector: false } : undefined,
+    directCandidates[3] ? { url: directCandidates[3], kind: "site-art", vector: false } : undefined,
+    directCandidates[4] ? { url: directCandidates[4], kind: "site-art", vector: false } : undefined,
+    fallbackIcon ? { url: fallbackIcon, kind: "site-art", vector: false } : undefined,
+    iconUrl && isGeneratedFavicon(iconUrl) ? { url: iconUrl, kind: "site-art", vector: false } : undefined
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((item): item is IconCandidate => {
+    if (!item || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
 };
 
 function BuiltInShortcutIcon({ iconUrl, fallback = "" }: { iconUrl?: string; fallback?: string }) {
@@ -256,51 +283,84 @@ function BuiltInShortcutIcon({ iconUrl, fallback = "" }: { iconUrl?: string; fal
   return <span className="built-in-shortcut-glyph" style={{ "--icon-tone": icon.tone } as React.CSSProperties}><Icon size={22} strokeWidth={2.3} /></span>;
 }
 
-function ShortcutIconContent({ url, iconUrl, fallback = "", priority = false }: { url: string; iconUrl?: string; fallback?: string; priority?: boolean }) {
+function ShortcutIconContent({ url, iconUrl, title = "", fallback = "", priority = false }: { url: string; iconUrl?: string; title?: string; fallback?: string; priority?: boolean }) {
   const builtInIcon = builtInShortcutIconFor(iconUrl);
   if (builtInIcon) return <BuiltInShortcutIcon iconUrl={iconUrl} fallback={fallback} />;
-  return <ShortcutIconImage url={url} iconUrl={iconUrl} fallback={fallback} priority={priority} />;
+  return <ShortcutIconImage url={url} iconUrl={iconUrl} title={title} fallback={fallback} priority={priority} />;
 }
 
-function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "", priority = false }: { url: string; iconUrl?: string; alt?: string; fallback?: string; priority?: boolean }) {
-  const candidates = useMemo(() => iconCandidatesFor(url, iconUrl), [url, iconUrl]);
+function ShortcutIconImage({ url, iconUrl, title = "", alt = "", fallback = "", priority = false }: { url: string; iconUrl?: string; title?: string; alt?: string; fallback?: string; priority?: boolean }) {
+  const candidates = useMemo(() => iconCandidatesFor(url, iconUrl, title), [url, iconUrl, title]);
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(priority);
+  const imageRef = useRef<HTMLImageElement>(null);
   const loadedRef = useRef(false);
-  const candidateKey = candidates.join("|");
+  const candidateKey = candidates.map((candidate) => `${candidate.kind}:${candidate.url}`).join("|");
   const current = candidates[index];
 
   useEffect(() => {
-    setIndex(0);
+    const cachedUrl = resolvedIconCache.get(candidateKey);
+    const cachedIndex = cachedUrl ? candidates.findIndex((candidate) => candidate.url === cachedUrl) : -1;
+    setIndex(cachedIndex >= 0 ? cachedIndex : 0);
     setLoaded(false);
     loadedRef.current = false;
   }, [candidateKey]);
 
   useEffect(() => {
-    if (!current) return undefined;
+    if (priority) {
+      setShouldLoad(true);
+      return undefined;
+    }
+    const image = imageRef.current;
+    if (!image || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: "320px" });
+    observer.observe(image);
+    return () => observer.disconnect();
+  }, [candidateKey, priority]);
+
+  useEffect(() => {
+    if (!current || !shouldLoad) return undefined;
     setLoaded(false);
     loadedRef.current = false;
     const timeout = window.setTimeout(() => {
       if (!loadedRef.current) setIndex((value) => value + 1);
     }, ICON_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
-  }, [current]);
+  }, [current, shouldLoad]);
 
   const fallbackText = fallback || "网";
   if (!current || index >= candidates.length) return <span className="shortcut-icon-fallback">{fallbackText}</span>;
-  const imageKind = /cdn\.simpleicons\.org/i.test(current) ? "is-brand-mark" : "is-site-art";
   return (
     <>
       {!loaded && <span className="shortcut-icon-fallback" aria-hidden="true">{fallbackText}</span>}
       <img
-        className={`shortcut-icon-image ${imageKind} ${loaded ? "is-loaded" : ""}`}
-        src={current}
+        ref={imageRef}
+        key={current.url}
+        className={`shortcut-icon-image is-${current.kind} ${loaded ? "is-loaded" : ""}`}
+        src={shouldLoad ? current.url : undefined}
         alt={alt}
-        loading={priority ? "eager" : "lazy"}
+        loading="eager"
         decoding="async"
         referrerPolicy="no-referrer"
-        onLoad={() => {
+        onLoad={(event) => {
+          const image = event.currentTarget;
+          const shortestEdge = Math.min(image.naturalWidth, image.naturalHeight);
+          if (!current.vector && shortestEdge < MIN_SHARP_ICON_SIZE) {
+            loadedRef.current = false;
+            setLoaded(false);
+            setIndex((value) => value + 1);
+            return;
+          }
           loadedRef.current = true;
+          resolvedIconCache.set(candidateKey, current.url);
           setLoaded(true);
         }}
         onError={() => {
@@ -317,7 +377,36 @@ function IconChoicePreview({ src, fallback }: { src: string; fallback: string })
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (failed) return <span className="icon-choice-fallback">{fallback}</span>;
-  return <img src={src} alt="" onError={() => setFailed(true)} />;
+  return (
+    <img
+      src={src}
+      alt=""
+      onLoad={(event) => {
+        const shortestEdge = Math.min(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+        if (!isVectorIconUrl(src) && shortestEdge < MIN_SHARP_ICON_SIZE) setFailed(true);
+      }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function FolderIconContent({ iconUrl, size }: { iconUrl?: string; size: number }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [iconUrl]);
+  if (!iconUrl || failed) return <Folder size={size} />;
+  return (
+    <img
+      src={iconUrl}
+      alt=""
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onLoad={(event) => {
+        const shortestEdge = Math.min(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+        if (!isVectorIconUrl(iconUrl) && shortestEdge < MIN_SHARP_ICON_SIZE) setFailed(true);
+      }}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 const searchEngines: Record<SearchEngine, { label: string; url: (query: string) => string }> = {
@@ -1478,6 +1567,47 @@ export default function App() {
     setWidgetMenu({ x: event.clientX, y: event.clientY, widgetKey });
   };
 
+  const handleAppContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target instanceof Element ? event.target : event.currentTarget;
+    if (target.closest(".shortcut-menu, .dialog, input, textarea, select, [contenteditable='true']")) return;
+
+    const shortcutId = target.closest<HTMLElement>("[data-shortcut-id]")?.dataset.shortcutId;
+    if (shortcutId) {
+      event.preventDefault();
+      event.stopPropagation();
+      setFolderMenu(null);
+      setPageMenu(null);
+      setWidgetMenu(null);
+      setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId });
+      return;
+    }
+
+    const folderId = target.closest<HTMLElement>("[data-folder-id]")?.dataset.folderId;
+    if (folderId) {
+      event.preventDefault();
+      event.stopPropagation();
+      setShortcutMenu(null);
+      setPageMenu(null);
+      setWidgetMenu(null);
+      setFolderMenu({ x: event.clientX, y: event.clientY, folderId });
+      return;
+    }
+
+    const widgetKey = target.closest<HTMLElement>("[data-widget-key]")?.dataset.widgetKey as WidgetKey | undefined;
+    if (widgetKey || target.closest(".home-dashboard")) {
+      openWidgetMenu(event, widgetKey);
+      return;
+    }
+
+    if (activePage !== "shortcuts" || !target.closest("#whytab-workspace") || target.closest("button, a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setShortcutMenu(null);
+    setFolderMenu(null);
+    setWidgetMenu(null);
+    setPageMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const doSync = async (mode: SyncMode) => {
     const message = mode === "merge" ? "正在合并多端数据..." : mode === "push" ? "正在用本机覆盖云端..." : "正在用云端覆盖本机...";
     setSync((old) => ({ ...old, syncing: true, message }));
@@ -1623,13 +1753,6 @@ export default function App() {
     goToPage(nextPage);
   };
 
-  const handleHomeContextMenu = (event: MouseEvent<HTMLElement>) => {
-    const target = event.target instanceof Element ? event.target : event.currentTarget;
-    if (target.closest("input, select, textarea, [contenteditable='true']")) return;
-    if (target.closest(".home-shortcut")) return;
-    const widget = target.closest<HTMLElement>("[data-widget-key]");
-    openWidgetMenu(event, widget?.dataset.widgetKey as WidgetKey | undefined);
-  };
   const widgetGridItems = enabledWidgetOrder.map((key) => {
     const PreviewIcon = widgetLibraryMeta[key].Icon;
     return {
@@ -1667,6 +1790,7 @@ export default function App() {
       className={`app ${state.settings.theme} nav-${navigationDisplay} nav-${navigationSide} ${navigationOpen ? "nav-open" : ""}`}
       style={backgroundStyle}
       onWheel={handlePageWheel}
+      onContextMenuCapture={handleAppContextMenu}
     >
       <a className="skip-link" href="#whytab-workspace">跳到主要内容</a>
       <div className="shell" ref={shellRef}>
@@ -1759,19 +1883,9 @@ export default function App() {
         <section
           id="whytab-workspace"
           className={["workspace", "page-" + activePage, activeCustomPageId ? "page-custom" : "", pageMotion ? "page-motion-" + pageMotion : ""].filter(Boolean).join(" ")}
-          onContextMenu={(event) => {
-            const target = event.target as HTMLElement;
-            if (activePage === "widgets") return;
-            if (target.closest(".shortcut") || target.closest(".folder-tile") || target.closest("input") || target.closest("button") || target.closest("a")) return;
-            event.preventDefault();
-            setShortcutMenu(null);
-            setFolderMenu(null);
-            setWidgetMenu(null);
-            setPageMenu({ x: event.clientX, y: event.clientY });
-          }}
         >
           {activePage === "widgets" ? (
-            <section className="home-dashboard" onContextMenuCapture={handleHomeContextMenu}>
+            <section className="home-dashboard">
               <div className="dashboard-toolbar" role="toolbar" aria-label="主页工具">
                 <button
                   type="button"
@@ -1795,22 +1909,6 @@ export default function App() {
                 iconSize={state.settings.iconSize}
                 editing={layoutEditing}
                 onOpenFolder={(folderId) => setOpenFolderId(folderId)}
-                onShortcutMenu={(event, shortcut) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setFolderMenu(null);
-                  setPageMenu(null);
-                  setWidgetMenu(null);
-                  setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
-                }}
-                onFolderMenu={(event, folder) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setShortcutMenu(null);
-                  setPageMenu(null);
-                  setWidgetMenu(null);
-                  setFolderMenu({ x: event.clientX, y: event.clientY, folderId: folder.id });
-                }}
                 onMoveTile={moveHomeTile}
               />
               {widgetsPanel}
@@ -1832,19 +1930,7 @@ export default function App() {
               onWallpaper={rotateMainWallpaper}
             />
           ) : (
-            <section
-              className="shortcut-stage"
-              onContextMenu={(event) => {
-                const target = event.target as HTMLElement;
-                if (target.closest(".shortcut") || target.closest(".folder-tile") || target.closest("input") || target.closest("button") || target.closest("a")) return;
-                event.preventDefault();
-                event.stopPropagation();
-                setShortcutMenu(null);
-                setFolderMenu(null);
-                setWidgetMenu(null);
-                setPageMenu({ x: event.clientX, y: event.clientY });
-              }}
-            >
+            <section className="shortcut-stage">
               <header className="shortcut-stage-head">
                 <div className="shortcut-stage-title">
                   <span>{activeCustomNavPage ? (() => {
@@ -1882,19 +1968,12 @@ export default function App() {
                         <article
                           className="shortcut folder-tile"
                           key={folder.id}
+                          data-folder-id={folder.id}
                           onClick={() => setOpenFolderId(folder.id)}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setShortcutMenu(null);
-                            setPageMenu(null);
-                            setWidgetMenu(null);
-                            setFolderMenu({ x: event.clientX, y: event.clientY, folderId: folder.id });
-                          }}
                         >
                           <button className="folder-open" title={"打开 " + folder.name}>
                             <span className={"shortcut-icon folder-icon " + (folder.iconUrl ? "has-image" : "")} style={{ "--folder-color": folder.iconColor } as React.CSSProperties}>
-                              {folder.iconUrl ? <img src={folder.iconUrl} alt="" /> : <Folder size={Math.round(state.settings.iconSize * 0.46)} />}
+                              <FolderIconContent iconUrl={folder.iconUrl} size={Math.round(state.settings.iconSize * 0.46)} />
                             </span>
                             <span>{folder.name}</span>
                           </button>
@@ -1907,21 +1986,14 @@ export default function App() {
                         className="shortcut"
                         draggable
                         key={shortcut.id}
+                        data-shortcut-id={shortcut.id}
                         onDragStart={() => setDragId(shortcut.id)}
                         onDragOver={(event) => event.preventDefault()}
                         onDrop={() => moveShortcut(shortcut.id)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setFolderMenu(null);
-                          setPageMenu(null);
-                          setWidgetMenu(null);
-                          setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
-                        }}
                       >
                         <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
                           <span className="shortcut-icon">
-                            <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
+                            <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
                           </span>
                           <span>{shortcut.title}</span>
                         </a>
@@ -2024,10 +2096,6 @@ export default function App() {
             setDialog("shortcut");
           }}
           onEditFolder={() => { setEditingFolder(openFolder); setDialog("folder"); }}
-          onShortcutMenu={(event, shortcut) => {
-            event.preventDefault();
-            setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
-          }}
         />
       )}
       {dialog === "import" && (
@@ -2257,13 +2325,11 @@ function ToolHub({ shortcutCount, folderCount, widgetCount, syncLabel, onOpenWid
   );
 }
 
-function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu, onFolderMenu, onMoveTile }: {
+function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onMoveTile }: {
   tiles: Array<{ kind: "folder"; folder: ShortcutFolder; order: number } | { kind: "shortcut"; shortcut: Shortcut; order: number }>;
   iconSize: number;
   editing: boolean;
   onOpenFolder: (folderId: string) => void;
-  onShortcutMenu: (event: MouseEvent, shortcut: Shortcut) => void;
-  onFolderMenu: (event: MouseEvent, folder: ShortcutFolder) => void;
   onMoveTile: (source?: HomeTileRef | string, target?: HomeTileRef | string) => void;
 }) {
   const [draggingKey, setDraggingKey] = useState<HomeTileRef | undefined>();
@@ -2341,6 +2407,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
             type="button"
             className={tileClass("home-shortcut folder-home", key)}
             key={"folder-" + item.folder.id}
+            data-folder-id={item.folder.id}
             onClick={() => {
               if (editing) {
                 chooseTouchTarget(key);
@@ -2349,7 +2416,6 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
               onOpenFolder(item.folder.id);
             }}
             title={item.folder.name}
-            onContextMenu={(event) => onFolderMenu(event, item.folder)}
             draggable={editing}
             onDragStart={(event) => startDrag(event, key)}
             onDragEnd={endDrag}
@@ -2359,7 +2425,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
             onDrop={(event) => dropTile(event, key)}
           >
             <span className={"shortcut-icon folder-icon " + (item.folder.iconUrl ? "has-image" : "")} style={{ "--folder-color": item.folder.iconColor } as React.CSSProperties}>
-              {item.folder.iconUrl ? <img src={item.folder.iconUrl} alt="" /> : <Folder size={Math.round(Math.max(48, Math.min(iconSize, 80)) * 0.46)} />}
+              <FolderIconContent iconUrl={item.folder.iconUrl} size={Math.round(Math.max(48, Math.min(iconSize, 80)) * 0.46)} />
             </span>
             <span>{item.folder.name}</span>
             {editing && <span className="tile-drag-handle" aria-hidden="true"><GripVertical size={14} /></span>}
@@ -2369,6 +2435,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
             className={tileClass("home-shortcut", key)}
             href={item.shortcut.url}
             key={item.shortcut.id}
+            data-shortcut-id={item.shortcut.id}
             title={item.shortcut.url}
             target="_blank"
             rel="noreferrer"
@@ -2378,7 +2445,6 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
               event.stopPropagation();
               chooseTouchTarget(key);
             }}
-            onContextMenu={(event) => onShortcutMenu(event, item.shortcut)}
             draggable={editing}
             onDragStart={(event) => startDrag(event, key)}
             onDragEnd={endDrag}
@@ -2388,7 +2454,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
             onDrop={(event) => dropTile(event, key)}
           >
             <span className="shortcut-icon">
-              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} fallback={item.shortcut.title.slice(0, 1)} priority />
+              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} title={item.shortcut.title} fallback={item.shortcut.title.slice(0, 1)} priority />
             </span>
             <span>{item.shortcut.title}</span>
             {editing && <span className="tile-drag-handle" aria-hidden="true"><GripVertical size={14} /></span>}
@@ -2404,8 +2470,8 @@ function Dock({ shortcuts }: { shortcuts: Shortcut[] }) {
   return (
     <nav className="dock" aria-label="固定快捷入口">
       {shortcuts.slice(0, 14).map((shortcut) => (
-        <a key={shortcut.id} href={shortcut.url} title={shortcut.title} target="_blank" rel="noreferrer">
-          <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
+        <a key={shortcut.id} data-shortcut-id={shortcut.id} href={shortcut.url} title={shortcut.title} target="_blank" rel="noreferrer">
+          <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
         </a>
       ))}
     </nav>
@@ -2419,28 +2485,31 @@ const contextMenuPosition = (x: number, y: number, width: number, height: number
 
 function useContextMenuSurface<T extends HTMLElement>(onClose: () => void) {
   const surfaceRef = useRef<T>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     const closeOutside = (event: globalThis.PointerEvent) => {
-      if (!surfaceRef.current?.contains(event.target as Node)) onClose();
+      if (!surfaceRef.current?.contains(event.target as Node)) onCloseRef.current();
     };
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
+    const closeOnResize = () => onCloseRef.current();
     const frame = window.requestAnimationFrame(() => {
       surfaceRef.current?.focus({ preventScroll: true });
       window.addEventListener("pointerdown", closeOutside, true);
       window.addEventListener("keydown", closeOnEscape);
-      window.addEventListener("resize", onClose);
-      window.addEventListener("blur", onClose);
+      window.addEventListener("resize", closeOnResize);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("pointerdown", closeOutside, true);
       window.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("resize", onClose);
-      window.removeEventListener("blur", onClose);
+      window.removeEventListener("resize", closeOnResize);
     };
-  }, [onClose]);
+  }, []);
   return surfaceRef;
 }
 
@@ -3260,13 +3329,12 @@ function RatesWidget({ widgetKey, size, rates, message, refreshing, onRefresh }:
   );
 }
 
-function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder, onShortcutMenu }: {
+function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder }: {
   folder: ShortcutFolder;
   shortcuts: Shortcut[];
   onClose: () => void;
   onAdd: () => void;
   onEditFolder: () => void;
-  onShortcutMenu: (event: MouseEvent, shortcut: Shortcut) => void;
 }) {
   return (
     <div className="overlay folder-overlay" role="dialog" aria-modal="true" onClick={onClose}>
@@ -3274,7 +3342,7 @@ function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder, onShortcu
         <header>
           <div className="folder-title">
             <span className={`folder-badge ${folder.iconUrl ? "has-image" : ""}`} style={{ backgroundColor: folder.iconColor }}>
-              {folder.iconUrl ? <img src={folder.iconUrl} alt="" /> : <Folder size={22} />}
+              <FolderIconContent iconUrl={folder.iconUrl} size={22} />
             </span>
             <div>
               <h2>{folder.name}</h2>
@@ -3291,11 +3359,11 @@ function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder, onShortcu
             <article
               className="shortcut"
               key={shortcut.id}
-              onContextMenu={(event) => onShortcutMenu(event, shortcut)}
+              data-shortcut-id={shortcut.id}
             >
               <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
                 <span className="shortcut-icon">
-                  <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
+                  <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
                 </span>
                 <span>{shortcut.title}</span>
               </a>
@@ -3336,7 +3404,7 @@ function FolderDialog({ folder, groups, onClose, onSave, onDelete }: {
       </label>
       <div className="folder-preview">
         <span className={`shortcut-icon folder-icon ${draft.iconUrl ? "has-image" : ""}`} style={{ "--folder-color": draft.iconColor || "#14B8A6", "--icon": "64px" } as React.CSSProperties}>
-          {draft.iconUrl ? <img src={draft.iconUrl} alt="" /> : <Folder size={30} />}
+          <FolderIconContent iconUrl={draft.iconUrl} size={30} />
         </span>
         <span>{draft.name || "文件夹预览"}</span>
       </div>
@@ -3430,7 +3498,7 @@ function ShortcutDialog({ shortcut, groups, folders, onClose, onSave }: {
       </section>
       <div className="shortcut-dialog-preview">
         <span className="shortcut-icon" style={{ "--icon": "58px", "--fallback-color": draft.iconColor || "#737373" } as React.CSSProperties}>
-          <ShortcutIconContent url={draft.url || ""} iconUrl={draft.iconUrl} fallback={(draft.title || "网").slice(0, 1)} />
+          <ShortcutIconContent url={draft.url || ""} iconUrl={draft.iconUrl} title={draft.title || ""} fallback={(draft.title || "网").slice(0, 1)} />
         </span>
         <span>{draft.title || "预览"}</span>
       </div>
@@ -3722,7 +3790,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
               {shortcuts.map((shortcut) => (
                 <button type="button" key={shortcut.id} onClick={() => onEditShortcut(shortcut)}>
                   <span className="shortcut-icon">
-                    <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
+                    <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
                   </span>
                   <span>
                     <strong>{shortcut.title}</strong>

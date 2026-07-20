@@ -29,11 +29,24 @@ export const fallbackFaviconFor = (url: string) => {
   return host ? `https://icons.duckduckgo.com/ip3/${host}.ico` : undefined;
 };
 
+export const siteIconCandidatesFor = (url: string) => {
+  const host = faviconHostFor(url);
+  if (!host) return [];
+  const origin = `https://${host}`;
+  return [
+    `${origin}/apple-touch-icon.png`,
+    `${origin}/apple-touch-icon-precomposed.png`,
+    `${origin}/android-chrome-192x192.png`,
+    `${origin}/favicon-192x192.png`,
+    `${origin}/favicon.ico`
+  ];
+};
+
 const simpleIcon = (slug: string) => `https://cdn.simpleicons.org/${slug}`;
 
 const curatedIconRules: Array<{ hosts?: string[]; title?: string[]; iconUrl: string }> = [
+  { hosts: ["maps.google.com"], title: ["google maps", "谷歌地图"], iconUrl: simpleIcon("googlemaps") },
   { hosts: ["google.com", "google.com.hk"], title: ["google"], iconUrl: simpleIcon("google") },
-  { hosts: ["google.com"], title: ["maps", "地图"], iconUrl: simpleIcon("googlemaps") },
   { hosts: ["youtube.com", "youtu.be"], iconUrl: simpleIcon("youtube") },
   { hosts: ["chatgpt.com", "openai.com"], title: ["chatgpt", "openai", "sora"], iconUrl: simpleIcon("openai") },
   { hosts: ["gemini.google.com"], title: ["gemini"], iconUrl: simpleIcon("googlegemini") },
