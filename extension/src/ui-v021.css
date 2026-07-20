@@ -1,4 +1,4 @@
-/* WhyTab 0.2.3: stable edge navigation, context menus, and workspace geometry. */
+/* WhyTab 0.2.4: centered edge navigation, context menus, and stable workspace geometry. */
 
 .app {
   --v21-surface: rgba(14, 17, 21, 0.78);
@@ -217,7 +217,7 @@
   position: fixed !important;
   left: auto !important;
   right: auto !important;
-  top: 84px !important;
+  top: 50% !important;
   bottom: auto !important;
   z-index: 50 !important;
   width: 72px !important;
@@ -232,7 +232,7 @@
   border-radius: 8px !important;
   background: var(--v21-surface-strong) !important;
   box-shadow: var(--v21-shadow) !important;
-  transform: none !important;
+  transform: translateY(-50%) !important;
   backdrop-filter: blur(16px) saturate(1.03) !important;
   transition: transform 180ms ease, opacity 160ms ease, border-color 160ms ease !important;
 }
@@ -246,16 +246,16 @@
 }
 
 .app.nav-auto.nav-left .page-nav {
-  transform: translateX(calc(-100% + 10px)) !important;
+  transform: translateX(calc(-100% + 10px)) translateY(-50%) !important;
 }
 
 .app.nav-auto.nav-right .page-nav {
-  transform: translateX(calc(100% - 10px)) !important;
+  transform: translateX(calc(100% - 10px)) translateY(-50%) !important;
 }
 
 .app.nav-auto .page-nav:hover,
 .app.nav-auto .page-nav:focus-within {
-  transform: translateX(0) !important;
+  transform: translateX(0) translateY(-50%) !important;
 }
 
 .app.nav-auto .page-nav::after {
@@ -287,22 +287,22 @@
 }
 
 .app.nav-hidden.nav-left .page-nav {
-  transform: translateX(calc(-100% - 24px)) !important;
+  transform: translateX(calc(-100% - 24px)) translateY(-50%) !important;
 }
 
 .app.nav-hidden.nav-right .page-nav {
-  transform: translateX(calc(100% + 24px)) !important;
+  transform: translateX(calc(100% + 24px)) translateY(-50%) !important;
 }
 
 .app.nav-hidden.nav-open .page-nav {
   opacity: 1 !important;
   pointer-events: auto !important;
-  transform: translateX(0) !important;
+  transform: translateX(0) translateY(-50%) !important;
 }
 
 .page-nav-trigger {
   position: fixed !important;
-  top: 108px !important;
+  top: 50% !important;
   z-index: 49 !important;
   width: 26px !important;
   min-width: 26px !important;
@@ -315,6 +315,7 @@
   background: var(--v21-surface-strong) !important;
   color: var(--v21-muted) !important;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18) !important;
+  transform: translateY(-50%) !important;
   backdrop-filter: blur(14px) !important;
 }
 
