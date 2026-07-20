@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.3.0**. See the [bilingual release notes](docs/releases/0.3.0.md).
+Current release: **0.4.0**. See the [bilingual release notes](docs/releases/0.4.0.md).
 
 ## Product and Framework
 
@@ -19,6 +19,9 @@ whytab is both a ready-to-use product and an open-source configurable framework.
 - Optional cloud sync: users can register or sign in with email and password to sync across devices.
 - User data isolation: cloud data is protected by Supabase Auth and Row Level Security.
 - Editable home workspace: enable layout editing to reorder shortcuts and widgets without changing their data.
+- Full-bleed website icons: real site artwork fills the icon itself without an extra colored container.
+- Translucent workspace: neutral, wallpaper-aware materials keep cards readable without imposing random widget colors.
+- Curated wallpaper library: 32 built-in choices, including 20 original desktop/mobile pairs across Japanese, illustrated, cat, and cinematic styles.
 - Personal pages: add pages to the left navigation, assign shortcut groups to them, or hide optional built-in pages.
 - Cross-platform usage: works on macOS, Windows, iOS, iPadOS, Android, and other modern browsers depending on extension/PWA support.
 - Import and backup: supports whytab JSON, browser bookmarks HTML, CSV, and old new-tab page migration input.
@@ -91,6 +94,16 @@ https://why-tool.com/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.4.0 通透界面、完整图标与原创壁纸
+
+- 网站真实图标直接占满图标区域，取消额外彩色大框；主页和网站页继续共用同一图标尺寸与圆润比例。
+- 全部小组件改为中性通透材质，重新梳理标题、字号、留白、数据层级和空状态，不再用互相冲突的随机强调色。
+- 网站、文件夹、页面和小组件右键菜单统一提升到最上层，修复菜单消失、被卡片遮挡和尺寸预览难以辨认的问题。
+- 新增 20 张 whytab 原创壁纸，覆盖日系、原创动漫、猫咪和酷感四种风格；每张都有独立桌面与手机文件。
+- 壁纸资源中心支持风格筛选、懒加载、个人壁纸集和每日轮换，手机不再下载横屏大图。
+- 手机内容在底部导航上方独立滚动，导航不遮挡卡片和文字；页面切换自动回到顶部。
+- 数据结构仍为版本 1，不修改注册、登录、账号隔离、同步协议或本地存储逻辑。
 
 ### 0.3.0 全新界面与交互系统
 
@@ -165,7 +178,7 @@ The browser extension replaces the new tab page where the browser supports `chro
 - Add, edit, delete, and reorder shortcuts
 - Reorder homepage shortcuts in layout editing mode; touch devices use a deliberate two-step selection to avoid accidental moves
 - Automatic favicon matching
-- Custom icon URL and icon color
+- Custom icon URL and built-in fallback icons
 - Search/filter shortcuts
 - Import from browser bookmarks, CSV, old new-tab page captures, or whytab JSON
 
@@ -196,10 +209,10 @@ The browser extension replaces the new tab page where the browser supports `chro
 ### Appearance
 
 - Dark and light themes
-- Built-in wallpapers
+- 32 built-in wallpapers with style filters and mobile-optimized files
 - Custom wallpaper upload
 - Daily wallpaper rotation
-- Glass intensity
+- Live card transparency
 - Icon size
 - Grid density
 - Dock position

@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import "./ui-v030.css";
+import "./ui-v040.css";
 
 type ErrorBoundaryState = { error?: Error };
 

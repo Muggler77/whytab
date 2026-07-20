@@ -83,6 +83,7 @@ import type { AppState, Countdown, CustomNavPage, CustomNavPageIcon, RatesState,
 
 type Dialog = "shortcut" | "folder" | "import" | "library" | "pages" | "settings" | "sync" | "timezone" | null;
 type ShortcutMenuState = { x: number; y: number; shortcutId: string } | null;
+type FolderMenuState = { x: number; y: number; folderId: string } | null;
 type PageMenuState = { x: number; y: number } | null;
 type WidgetMenuState = { x: number; y: number; widgetKey?: WidgetKey } | null;
 type HomePage = "widgets" | "shortcuts" | "tools";
@@ -135,21 +136,6 @@ const widgetNames: Record<WidgetKey, string> = {
   memo: "便签",
   year: "年度进度",
   calculator: "计算器"
-};
-
-const widgetDescriptions: Record<WidgetKey, string> = {
-  weather: "实时概览",
-  calendar: "本月日程",
-  countdowns: "重要节点",
-  todos: "今日任务",
-  notes: "个人画框",
-  rates: "实时换算",
-  quote: "今日一句",
-  focus: "25 分钟",
-  clock: "多地时间",
-  memo: "快速记录",
-  year: "时间进度",
-  calculator: "快速计算"
 };
 
 const widgetLibraryMeta: Record<WidgetKey, {
@@ -255,9 +241,9 @@ const iconCandidatesFor = (url: string, iconUrl?: string, title = "") => {
   const builtInIcon = builtInShortcutIconFor(iconUrl);
   const candidates = [
     iconUrl && !builtInIcon && !isGeneratedFavicon(iconUrl) ? iconUrl : undefined,
-    curatedIconFor(url, title),
-    fallbackFaviconFor(url),
     faviconFor(url),
+    fallbackFaviconFor(url),
+    curatedIconFor(url, title),
     iconUrl && isGeneratedFavicon(iconUrl) ? iconUrl : undefined
   ].filter((item): item is string => Boolean(item));
   return Array.from(new Set(candidates));
@@ -302,11 +288,12 @@ function ShortcutIconImage({ url, iconUrl, alt = "", fallback = "", priority = f
 
   const fallbackText = fallback || "网";
   if (!current || index >= candidates.length) return <span className="shortcut-icon-fallback">{fallbackText}</span>;
+  const imageKind = /cdn\.simpleicons\.org/i.test(current) ? "is-brand-mark" : "is-site-art";
   return (
     <>
       {!loaded && <span className="shortcut-icon-fallback" aria-hidden="true">{fallbackText}</span>}
       <img
-        className={`shortcut-icon-image ${loaded ? "is-loaded" : ""}`}
+        className={`shortcut-icon-image ${imageKind} ${loaded ? "is-loaded" : ""}`}
         src={current}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
@@ -360,24 +347,45 @@ const dailyQuotes = [
   { text: "少一点入口焦虑，多一点顺手抵达。", source: "whytab" }
 ];
 
-type BuiltInWallpaper = { id: string; name: string; url: string; mobileUrl?: string };
+type WallpaperCategory = "精选" | "日系" | "动漫" | "猫咪" | "酷感";
+type BuiltInWallpaper = { id: string; name: string; url: string; mobileUrl?: string; category: WallpaperCategory };
 
 const featuredWallpapers: BuiltInWallpaper[] = [
-  { id: "coastal-glass", name: "冷雾海岸", url: "/wallpapers/photo/coastal-glass.jpg", mobileUrl: "/wallpapers/photo/mobile/coastal-glass.webp" },
-  { id: "neon-rain", name: "雨夜霓虹", url: "/wallpapers/photo/neon-rain.jpg", mobileUrl: "/wallpapers/photo/mobile/neon-rain.webp" },
-  { id: "aurora-lake", name: "极光山湖", url: "/wallpapers/photo/aurora-lake.jpg", mobileUrl: "/wallpapers/photo/mobile/aurora-lake.webp" },
-  { id: "ocean-cliff", name: "清晨海崖", url: "/wallpapers/photo/ocean-cliff.jpg", mobileUrl: "/wallpapers/photo/mobile/ocean-cliff.webp" },
-  { id: "midnight-silk", name: "午夜丝绸", url: "/wallpapers/midnight-silk.svg" },
-  { id: "jade-mist", name: "青玉雾光", url: "/wallpapers/jade-mist.svg" },
-  { id: "rose-dusk", name: "玫瑰暮色", url: "/wallpapers/rose-dusk.svg" },
-  { id: "silver-ridge", name: "银岭微光", url: "/wallpapers/silver-ridge.svg" }
+  { id: "coastal-glass", name: "冷雾海岸", url: "/wallpapers/photo/coastal-glass.jpg", mobileUrl: "/wallpapers/photo/mobile/coastal-glass.webp", category: "精选" },
+  { id: "neon-rain", name: "雨夜霓虹", url: "/wallpapers/photo/neon-rain.jpg", mobileUrl: "/wallpapers/photo/mobile/neon-rain.webp", category: "精选" },
+  { id: "aurora-lake", name: "极光山湖", url: "/wallpapers/photo/aurora-lake.jpg", mobileUrl: "/wallpapers/photo/mobile/aurora-lake.webp", category: "精选" },
+  { id: "ocean-cliff", name: "清晨海崖", url: "/wallpapers/photo/ocean-cliff.jpg", mobileUrl: "/wallpapers/photo/mobile/ocean-cliff.webp", category: "精选" },
+  { id: "midnight-silk", name: "午夜丝绸", url: "/wallpapers/midnight-silk.svg", category: "精选" },
+  { id: "jade-mist", name: "青玉雾光", url: "/wallpapers/jade-mist.svg", category: "精选" },
+  { id: "rose-dusk", name: "玫瑰暮色", url: "/wallpapers/rose-dusk.svg", category: "精选" },
+  { id: "silver-ridge", name: "银岭微光", url: "/wallpapers/silver-ridge.svg", category: "精选" },
+  { id: "sakura-canal", name: "樱川清晨", url: "/wallpapers/photo/sakura-canal.jpg", mobileUrl: "/wallpapers/photo/mobile/sakura-canal.jpg", category: "日系" },
+  { id: "tatami-light", name: "榻榻米晨光", url: "/wallpapers/photo/tatami-light.jpg", mobileUrl: "/wallpapers/photo/mobile/tatami-light.jpg", category: "日系" },
+  { id: "hydrangea-train", name: "紫阳花电车", url: "/wallpapers/photo/hydrangea-train.jpg", mobileUrl: "/wallpapers/photo/mobile/hydrangea-train.jpg", category: "日系" },
+  { id: "hokkaido-fields", name: "北海道晴野", url: "/wallpapers/photo/hokkaido-fields.jpg", mobileUrl: "/wallpapers/photo/mobile/hokkaido-fields.jpg", category: "日系" },
+  { id: "tokyo-laneway", name: "东京小巷", url: "/wallpapers/photo/tokyo-laneway.jpg", mobileUrl: "/wallpapers/photo/mobile/tokyo-laneway.jpg", category: "日系" },
+  { id: "sky-platform", name: "云上站台", url: "/wallpapers/photo/sky-platform.jpg", mobileUrl: "/wallpapers/photo/mobile/sky-platform.jpg", category: "动漫" },
+  { id: "future-bay", name: "未来海湾", url: "/wallpapers/photo/future-bay.jpg", mobileUrl: "/wallpapers/photo/mobile/future-bay.jpg", category: "动漫" },
+  { id: "sunset-room", name: "黄昏房间", url: "/wallpapers/photo/sunset-room.jpg", mobileUrl: "/wallpapers/photo/mobile/sunset-room.jpg", category: "动漫" },
+  { id: "floating-islands", name: "浮空群岛", url: "/wallpapers/photo/floating-islands.jpg", mobileUrl: "/wallpapers/photo/mobile/floating-islands.jpg", category: "动漫" },
+  { id: "rainy-neon", name: "雨幕霓虹", url: "/wallpapers/photo/rainy-neon.jpg", mobileUrl: "/wallpapers/photo/mobile/rainy-neon.jpg", category: "动漫" },
+  { id: "window-cat", name: "窗边白猫", url: "/wallpapers/photo/window-cat.jpg", mobileUrl: "/wallpapers/photo/mobile/window-cat.jpg", category: "猫咪" },
+  { id: "meadow-cat", name: "花野橘猫", url: "/wallpapers/photo/meadow-cat.jpg", mobileUrl: "/wallpapers/photo/mobile/meadow-cat.jpg", category: "猫咪" },
+  { id: "neon-black-cat", name: "霓虹黑猫", url: "/wallpapers/photo/neon-black-cat.jpg", mobileUrl: "/wallpapers/photo/mobile/neon-black-cat.jpg", category: "猫咪" },
+  { id: "cozy-kittens", name: "暖毯幼猫", url: "/wallpapers/photo/cozy-kittens.jpg", mobileUrl: "/wallpapers/photo/mobile/cozy-kittens.jpg", category: "猫咪" },
+  { id: "moon-cat", name: "月下猫影", url: "/wallpapers/photo/moon-cat.jpg", mobileUrl: "/wallpapers/photo/mobile/moon-cat.jpg", category: "猫咪" },
+  { id: "black-roadster", name: "雨夜跑车", url: "/wallpapers/photo/black-roadster.jpg", mobileUrl: "/wallpapers/photo/mobile/black-roadster.jpg", category: "酷感" },
+  { id: "coastal-rider", name: "海岸骑士", url: "/wallpapers/photo/coastal-rider.jpg", mobileUrl: "/wallpapers/photo/mobile/coastal-rider.jpg", category: "酷感" },
+  { id: "monolith-city", name: "黑曜之城", url: "/wallpapers/photo/monolith-city.jpg", mobileUrl: "/wallpapers/photo/mobile/monolith-city.jpg", category: "酷感" },
+  { id: "orbital-drift", name: "轨道漫游", url: "/wallpapers/photo/orbital-drift.jpg", mobileUrl: "/wallpapers/photo/mobile/orbital-drift.jpg", category: "酷感" },
+  { id: "storm-ridge", name: "风暴山脊", url: "/wallpapers/photo/storm-ridge.jpg", mobileUrl: "/wallpapers/photo/mobile/storm-ridge.jpg", category: "酷感" }
 ];
 
 const legacyWallpapers: BuiltInWallpaper[] = [
-  { id: "sonoma-dawn", name: "晨雾", url: "/wallpapers/sonoma-dawn.svg" },
-  { id: "aurora-tide", name: "极光", url: "/wallpapers/aurora-tide.svg" },
-  { id: "glass-orchid", name: "兰紫", url: "/wallpapers/glass-orchid.svg" },
-  { id: "sequoia-night", name: "暮林", url: "/wallpapers/sequoia-night.svg" }
+  { id: "sonoma-dawn", name: "晨雾", url: "/wallpapers/sonoma-dawn.svg", category: "精选" },
+  { id: "aurora-tide", name: "极光", url: "/wallpapers/aurora-tide.svg", category: "精选" },
+  { id: "glass-orchid", name: "兰紫", url: "/wallpapers/glass-orchid.svg", category: "精选" },
+  { id: "sequoia-night", name: "暮林", url: "/wallpapers/sequoia-night.svg", category: "精选" }
 ];
 
 const builtInWallpapers = [...featuredWallpapers, ...legacyWallpapers];
@@ -472,6 +480,7 @@ export default function App() {
   const [editingFolder, setEditingFolder] = useState<ShortcutFolder | undefined>();
   const [openFolderId, setOpenFolderId] = useState<string | undefined>();
   const [shortcutMenu, setShortcutMenu] = useState<ShortcutMenuState>(null);
+  const [folderMenu, setFolderMenu] = useState<FolderMenuState>(null);
   const [pageMenu, setPageMenu] = useState<PageMenuState>(null);
   const [widgetMenu, setWidgetMenu] = useState<WidgetMenuState>(null);
   const [searchText, setSearchText] = useState("");
@@ -500,6 +509,7 @@ export default function App() {
   const lastSyncedUpdatedAtRef = useRef<string | undefined>();
   const wheelPageLockRef = useRef(0);
   const toastTimerRef = useRef<number | undefined>();
+  const shellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -511,6 +521,13 @@ export default function App() {
       delete document.documentElement.dataset.whytabTheme;
     };
   }, [state.settings.theme]);
+
+  useEffect(() => {
+    setShortcutMenu(null);
+    setFolderMenu(null);
+    setPageMenu(null);
+    setWidgetMenu(null);
+  }, [activePage, activeCustomPageId]);
 
   useEffect(() => {
     return () => {
@@ -1456,6 +1473,7 @@ export default function App() {
     event.preventDefault();
     event.stopPropagation();
     setShortcutMenu(null);
+    setFolderMenu(null);
     setPageMenu(null);
     setWidgetMenu({ x: event.clientX, y: event.clientY, widgetKey });
   };
@@ -1533,8 +1551,7 @@ export default function App() {
   const backgroundStyle = {
     "--wallpaper-image": `url(${activeWallpaper})`,
     "--date-color": state.settings.dateTimeColor || "#ffffff",
-    "--widget-accent": state.settings.widgetAccentColor || "#2dd4bf",
-    "--widget-glass": state.settings.glass / 100
+    "--widget-glass": `${state.settings.glass}%`
   } as React.CSSProperties;
   const widgetSizes = { ...defaultWidgetSizes, ...(state.settings.widgetSizes || {}) };
   const widgetRenderers: Record<WidgetKey, React.ReactNode> = {
@@ -1559,22 +1576,30 @@ export default function App() {
     const nextIndex = visibleSystemPageOrder.indexOf(nextPage);
     setPageMotion(nextIndex > currentIndex ? "down" : "up");
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    shellRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setActiveCustomPageId(undefined);
     if (nextPage === "shortcuts") setActiveLayer("all");
     setActivePage(nextPage);
     if (navigationDisplay === "hidden") setNavigationOpen(false);
-    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      shellRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
   };
 
   const goToCustomPage = (page: CustomNavPage) => {
     if (activeCustomPageId === page.id) return;
     setPageMotion("down");
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    shellRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setActiveCustomPageId(page.id);
     setActiveLayer(page.groupId);
     setActivePage("shortcuts");
     if (navigationDisplay === "hidden") setNavigationOpen(false);
-    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      shellRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
   };
 
   const handlePageWheel = (event: React.WheelEvent<HTMLElement>) => {
@@ -1644,7 +1669,7 @@ export default function App() {
       onWheel={handlePageWheel}
     >
       <a className="skip-link" href="#whytab-workspace">跳到主要内容</a>
-      <div className="shell">
+      <div className="shell" ref={shellRef}>
         <header className="topbar">
           <div className="brand">
             <span className="mark"><img src="./icons/icon32.png" alt="" /></span>
@@ -1739,6 +1764,9 @@ export default function App() {
             if (activePage === "widgets") return;
             if (target.closest(".shortcut") || target.closest(".folder-tile") || target.closest("input") || target.closest("button") || target.closest("a")) return;
             event.preventDefault();
+            setShortcutMenu(null);
+            setFolderMenu(null);
+            setWidgetMenu(null);
             setPageMenu({ x: event.clientX, y: event.clientY });
           }}
         >
@@ -1770,13 +1798,18 @@ export default function App() {
                 onShortcutMenu={(event, shortcut) => {
                   event.preventDefault();
                   event.stopPropagation();
+                  setFolderMenu(null);
+                  setPageMenu(null);
+                  setWidgetMenu(null);
                   setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
                 }}
                 onFolderMenu={(event, folder) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  setEditingFolder(folder);
-                  setDialog("folder");
+                  setShortcutMenu(null);
+                  setPageMenu(null);
+                  setWidgetMenu(null);
+                  setFolderMenu({ x: event.clientX, y: event.clientY, folderId: folder.id });
                 }}
                 onMoveTile={moveHomeTile}
               />
@@ -1805,6 +1838,10 @@ export default function App() {
                 const target = event.target as HTMLElement;
                 if (target.closest(".shortcut") || target.closest(".folder-tile") || target.closest("input") || target.closest("button") || target.closest("a")) return;
                 event.preventDefault();
+                event.stopPropagation();
+                setShortcutMenu(null);
+                setFolderMenu(null);
+                setWidgetMenu(null);
                 setPageMenu({ x: event.clientX, y: event.clientY });
               }}
             >
@@ -1836,7 +1873,7 @@ export default function App() {
                   onDeleteGroup={deleteGroup}
                 />
               )}
-              <section className="shortcuts-panel" style={{ "--glass": state.settings.glass / 100 } as React.CSSProperties}>
+              <section className="shortcuts-panel">
                 <div className={"shortcut-grid " + state.settings.gridDensity} style={{ "--icon": state.settings.iconSize + "px" } as React.CSSProperties}>
                   {shortcutTiles.map((item) => {
                     if (item.kind === "folder") {
@@ -1849,8 +1886,10 @@ export default function App() {
                           onContextMenu={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            setEditingFolder(folder);
-                            setDialog("folder");
+                            setShortcutMenu(null);
+                            setPageMenu(null);
+                            setWidgetMenu(null);
+                            setFolderMenu({ x: event.clientX, y: event.clientY, folderId: folder.id });
                           }}
                         >
                           <button className="folder-open" title={"打开 " + folder.name}>
@@ -1874,11 +1913,14 @@ export default function App() {
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
+                          setFolderMenu(null);
+                          setPageMenu(null);
+                          setWidgetMenu(null);
                           setShortcutMenu({ x: event.clientX, y: event.clientY, shortcutId: shortcut.id });
                         }}
                       >
                         <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
-                          <span className="shortcut-icon" style={{ backgroundColor: shortcut.iconColor }}>
+                          <span className="shortcut-icon">
                             <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
                           </span>
                           <span>{shortcut.title}</span>
@@ -1907,6 +1949,16 @@ export default function App() {
           onEdit={(shortcut) => { setEditingShortcut(shortcut); setDialog("shortcut"); setShortcutMenu(null); }}
           onPin={togglePinned}
           onDelete={deleteShortcut}
+        />
+      )}
+      {folderMenu && (
+        <FolderContextMenu
+          menu={folderMenu}
+          folder={allFolders.find((item) => item.id === folderMenu.folderId)}
+          onClose={() => setFolderMenu(null)}
+          onOpen={(folder) => { setOpenFolderId(folder.id); setFolderMenu(null); }}
+          onEdit={(folder) => { setEditingFolder(folder); setDialog("folder"); setFolderMenu(null); }}
+          onDelete={(folder) => { deleteFolder(folder.id); setFolderMenu(null); }}
         />
       )}
       {pageMenu && (
@@ -2335,7 +2387,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onShortcutMenu,
             onDragLeave={(event) => leaveTile(event, key)}
             onDrop={(event) => dropTile(event, key)}
           >
-            <span className="shortcut-icon" style={{ backgroundColor: item.shortcut.iconColor }}>
+            <span className="shortcut-icon">
               <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} fallback={item.shortcut.title.slice(0, 1)} priority />
             </span>
             <span>{item.shortcut.title}</span>
@@ -2352,7 +2404,7 @@ function Dock({ shortcuts }: { shortcuts: Shortcut[] }) {
   return (
     <nav className="dock" aria-label="固定快捷入口">
       {shortcuts.slice(0, 14).map((shortcut) => (
-        <a key={shortcut.id} href={shortcut.url} title={shortcut.title} target="_blank" rel="noreferrer" style={{ backgroundColor: shortcut.iconColor }}>
+        <a key={shortcut.id} href={shortcut.url} title={shortcut.title} target="_blank" rel="noreferrer">
           <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
         </a>
       ))}
@@ -2365,6 +2417,33 @@ const contextMenuPosition = (x: number, y: number, width: number, height: number
   top: Math.max(8, Math.min(y, window.innerHeight - height - 8))
 });
 
+function useContextMenuSurface<T extends HTMLElement>(onClose: () => void) {
+  const surfaceRef = useRef<T>(null);
+  useEffect(() => {
+    const closeOutside = (event: globalThis.PointerEvent) => {
+      if (!surfaceRef.current?.contains(event.target as Node)) onClose();
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const frame = window.requestAnimationFrame(() => {
+      surfaceRef.current?.focus({ preventScroll: true });
+      window.addEventListener("pointerdown", closeOutside, true);
+      window.addEventListener("keydown", closeOnEscape);
+      window.addEventListener("resize", onClose);
+      window.addEventListener("blur", onClose);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointerdown", closeOutside, true);
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+  return surfaceRef;
+}
+
 function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete }: {
   menu: Exclude<ShortcutMenuState, null>;
   shortcut?: Shortcut;
@@ -2373,23 +2452,38 @@ function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete 
   onPin: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  useEffect(() => {
-    const close = () => onClose();
-    window.addEventListener("click", close);
-    return () => {
-      window.removeEventListener("click", close);
-    };
-  }, [onClose]);
-
+  const surfaceRef = useContextMenuSurface<HTMLDivElement>(onClose);
   if (!shortcut) return null;
   const position = contextMenuPosition(menu.x, menu.y, 188, 188);
-  return (
-    <div className="shortcut-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
-      <a href={shortcut.url} target="_blank" rel="noreferrer">打开新标签页</a>
-      <button onClick={() => onPin(shortcut.id)}><Pin size={14} /> {shortcut.pinned ? "从主页移除" : "放到主页"}</button>
-      <button onClick={() => onEdit(shortcut)}><Edit3 size={14} /> 编辑图标</button>
-      <button className="danger" onClick={() => onDelete(shortcut.id)}><Trash2 size={14} /> 删除</button>
-    </div>
+  return createPortal(
+    <div ref={surfaceRef} className="shortcut-menu" role="menu" aria-label={`${shortcut.title}快捷操作`} tabIndex={-1} style={position} onContextMenu={(event) => event.preventDefault()}>
+      <a role="menuitem" href={shortcut.url} target="_blank" rel="noreferrer">打开新标签页</a>
+      <button type="button" role="menuitem" onClick={() => onPin(shortcut.id)}><Pin size={15} /> {shortcut.pinned ? "从主页移除" : "放到主页"}</button>
+      <button type="button" role="menuitem" onClick={() => onEdit(shortcut)}><Edit3 size={15} /> 编辑图标</button>
+      <button type="button" role="menuitem" className="danger" onClick={() => onDelete(shortcut.id)}><Trash2 size={15} /> 删除</button>
+    </div>,
+    document.body
+  );
+}
+
+function FolderContextMenu({ menu, folder, onClose, onOpen, onEdit, onDelete }: {
+  menu: Exclude<FolderMenuState, null>;
+  folder?: ShortcutFolder;
+  onClose: () => void;
+  onOpen: (folder: ShortcutFolder) => void;
+  onEdit: (folder: ShortcutFolder) => void;
+  onDelete: (folder: ShortcutFolder) => void;
+}) {
+  const surfaceRef = useContextMenuSurface<HTMLDivElement>(onClose);
+  if (!folder) return null;
+  const position = contextMenuPosition(menu.x, menu.y, 196, 148);
+  return createPortal(
+    <div ref={surfaceRef} className="shortcut-menu" role="menu" aria-label={`${folder.name}文件夹操作`} tabIndex={-1} style={position} onContextMenu={(event) => event.preventDefault()}>
+      <button type="button" role="menuitem" onClick={() => onOpen(folder)}><Folder size={15} /> 打开文件夹</button>
+      <button type="button" role="menuitem" onClick={() => onEdit(folder)}><Edit3 size={15} /> 编辑文件夹</button>
+      <button type="button" role="menuitem" className="danger" onClick={() => onDelete(folder)}><Trash2 size={15} /> 删除文件夹</button>
+    </div>,
+    document.body
   );
 }
 
@@ -2401,21 +2495,16 @@ function PageContextMenu({ menu, onClose, onAddFolder, onAddShortcut, onAddGroup
   onAddGroup: () => void;
   onSettings: () => void;
 }) {
-  useEffect(() => {
-    const close = () => onClose();
-    window.addEventListener("click", close);
-    return () => {
-      window.removeEventListener("click", close);
-    };
-  }, [onClose]);
   const position = contextMenuPosition(menu.x, menu.y, 220, 260);
-  return (
-    <div className="shortcut-menu page-menu" role="menu" style={position} onClick={(event) => event.stopPropagation()}>
-      <button onClick={onAddShortcut}><Plus size={14} /> 添加网站</button>
-      <button onClick={onAddFolder}><FolderPlus size={14} /> 新建文件夹</button>
-      <button onClick={onAddGroup}><Layers size={14} /> 新建分类</button>
-      <button onClick={onSettings}><Palette size={14} /> 资源中心</button>
-    </div>
+  const surfaceRef = useContextMenuSurface<HTMLDivElement>(onClose);
+  return createPortal(
+    <div ref={surfaceRef} className="shortcut-menu page-menu" role="menu" aria-label="页面操作" tabIndex={-1} style={position} onContextMenu={(event) => event.preventDefault()}>
+      <button type="button" role="menuitem" onClick={onAddShortcut}><Plus size={15} /> 添加网站</button>
+      <button type="button" role="menuitem" onClick={onAddFolder}><FolderPlus size={15} /> 新建文件夹</button>
+      <button type="button" role="menuitem" onClick={onAddGroup}><Layers size={15} /> 新建分类</button>
+      <button type="button" role="menuitem" onClick={onSettings}><Palette size={15} /> 资源中心</button>
+    </div>,
+    document.body
   );
 }
 
@@ -2466,23 +2555,12 @@ function WidgetContextMenu({ menu, size, onClose, onResize, onOpenLibrary, onRef
   onRotateWallpaper: () => void;
   onHide: (key: WidgetKey) => void;
 }) {
-  useEffect(() => {
-    const close = () => onClose();
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("click", close);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [onClose]);
+  const surfaceRef = useContextMenuSurface<HTMLDivElement>(onClose);
   const position = contextMenuPosition(menu.x, menu.y, 344, menu.widgetKey ? 470 : 250);
   const widgetName = menu.widgetKey ? widgetNames[menu.widgetKey] : "主页";
   const WidgetIcon = menu.widgetKey ? widgetLibraryMeta[menu.widgetKey].Icon : Palette;
-  return (
-    <div className="shortcut-menu page-menu widget-menu" role="dialog" aria-label={`${widgetName}设置`} style={position} onClick={(event) => event.stopPropagation()}>
+  return createPortal(
+    <div ref={surfaceRef} className="shortcut-menu page-menu widget-menu" role="dialog" aria-label={`${widgetName}设置`} tabIndex={-1} style={position} onContextMenu={(event) => event.preventDefault()}>
       <div className="widget-menu-heading">
         <span className="widget-menu-icon"><WidgetIcon size={18} /></span>
         <span><strong>{widgetName}</strong><small>{menu.widgetKey ? "尺寸会立即显示在主页" : "主页外观与数据"}</small></span>
@@ -2497,7 +2575,8 @@ function WidgetContextMenu({ menu, size, onClose, onResize, onOpenLibrary, onRef
         <button onClick={onRotateWallpaper}><Shuffle size={14} /> 更换壁纸</button>
         {menu.widgetKey && <button className="danger" onClick={() => onHide(menu.widgetKey!)}><EyeOff size={14} /> 隐藏组件</button>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -2561,10 +2640,7 @@ function Widget({ title, action, children, tone = "default", size = "medium", wi
       <div className="widget-title">
         <div className="widget-heading">
           {WidgetIcon && <span className="widget-symbol"><WidgetIcon size={17} /></span>}
-          <span className="widget-heading-copy">
-            <h3>{title}</h3>
-            {widgetKey && <small>{widgetDescriptions[widgetKey]}</small>}
-          </span>
+          <h3>{title}</h3>
         </div>
         <div className="widget-actions">
           {action}
@@ -2744,12 +2820,18 @@ function CalendarWidget({ widgetKey, size, date, state, updateState }: { widgetK
 }
 
 function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: WidgetKey; size: WidgetSize; state: AppState; updateState: (updater: (state: AppState) => AppState) => void }) {
+  const defaultDate = calendarDateKey(new Date(Date.now() + 7 * 86400000));
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDate, setDraftDate] = useState(defaultDate);
   const addCountdown = () => {
-    const title = window.prompt("倒计时名称");
-    const date = window.prompt("日期，例如 2026-12-31");
-    if (!title || !date) return;
-    const item: Countdown = { id: uid(), title, date, updatedAt: nowIso() };
+    const title = draftTitle.trim();
+    if (!title || !draftDate) return;
+    const item: Countdown = { id: uid(), title, date: draftDate, updatedAt: nowIso() };
     updateState((current) => ({ ...current, countdowns: [...current.countdowns, item] }));
+    setDraftTitle("");
+    setDraftDate(defaultDate);
+    setEditorOpen(false);
   };
   const items = state.countdowns.filter((item) => !item.deletedAt);
   const countdownDays = (item: Countdown) => Math.ceil((new Date(`${item.date}T00:00:00`).getTime() - Date.now()) / 86400000);
@@ -2762,7 +2844,7 @@ function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: W
   };
   const featured = items[0];
   return (
-    <Widget title="倒计时" widgetKey={widgetKey} tone="countdown" size={size} action={<button title="添加" onClick={addCountdown}><Plus size={14} /></button>}>
+    <Widget title="倒计时" widgetKey={widgetKey} tone="countdown" size={size} action={<button title="添加" onClick={() => setEditorOpen(true)}><Plus size={14} /></button>}>
       {featured ? (() => {
         const days = countdownDays(featured);
         return (
@@ -2776,7 +2858,7 @@ function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: W
             <button type="button" title="删除倒计时" onClick={() => removeCountdown(featured.id)}><X size={13} /></button>
           </div>
         );
-      })() : <button type="button" className="countdown-empty" onClick={addCountdown}><Plus size={18} /><span>添加一个重要日期</span></button>}
+      })() : <button type="button" className="countdown-empty" onClick={() => setEditorOpen(true)}><Plus size={18} /><span>添加一个重要日期</span></button>}
       {items.slice(1).map((item) => {
         const days = countdownDays(item);
         return (
@@ -2787,6 +2869,24 @@ function CountdownWidget({ widgetKey, size, state, updateState }: { widgetKey: W
           </div>
         );
       })}
+      {editorOpen && (
+        <DialogShell title="添加倒计时" onClose={() => setEditorOpen(false)} className="widget-popover countdown-popover">
+          <form className="countdown-editor" onSubmit={(event) => { event.preventDefault(); addCountdown(); }}>
+            <label>
+              <span>名称</span>
+              <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="例如：旅行出发" autoFocus />
+            </label>
+            <label>
+              <span>日期</span>
+              <input type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)} />
+            </label>
+            <div className="countdown-editor-actions">
+              <button type="button" onClick={() => setEditorOpen(false)}>取消</button>
+              <button type="submit" className="primary-mini" disabled={!draftTitle.trim() || !draftDate}>添加</button>
+            </div>
+          </form>
+        </DialogShell>
+      )}
     </Widget>
   );
 }
@@ -3194,7 +3294,7 @@ function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder, onShortcu
               onContextMenu={(event) => onShortcutMenu(event, shortcut)}
             >
               <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
-                <span className="shortcut-icon" style={{ backgroundColor: shortcut.iconColor }}>
+                <span className="shortcut-icon">
                   <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
                 </span>
                 <span>{shortcut.title}</span>
@@ -3234,7 +3334,6 @@ function FolderDialog({ folder, groups, onClose, onSave, onDelete }: {
           }}
         />
       </label>
-      <label>颜色<input type="color" value={draft.iconColor || "#14B8A6"} onChange={(event) => setDraft({ ...draft, iconColor: event.target.value })} /></label>
       <div className="folder-preview">
         <span className={`shortcut-icon folder-icon ${draft.iconUrl ? "has-image" : ""}`} style={{ "--folder-color": draft.iconColor || "#14B8A6", "--icon": "64px" } as React.CSSProperties}>
           {draft.iconUrl ? <img src={draft.iconUrl} alt="" /> : <Folder size={30} />}
@@ -3330,12 +3429,11 @@ function ShortcutDialog({ shortcut, groups, folders, onClose, onSave }: {
         </div>
       </section>
       <div className="shortcut-dialog-preview">
-        <span className="shortcut-icon" style={{ "--icon": "58px", backgroundColor: draft.iconColor || "#14B8A6" } as React.CSSProperties}>
+        <span className="shortcut-icon" style={{ "--icon": "58px", "--fallback-color": draft.iconColor || "#737373" } as React.CSSProperties}>
           <ShortcutIconContent url={draft.url || ""} iconUrl={draft.iconUrl} fallback={(draft.title || "网").slice(0, 1)} />
         </span>
         <span>{draft.title || "预览"}</span>
       </div>
-      <label>颜色<input type="color" value={draft.iconColor || "#14B8A6"} onChange={(event) => setDraft({ ...draft, iconColor: event.target.value })} /></label>
       <label>分组<select value={draft.groupId || groups[0]?.id} onChange={(event) => setDraft({ ...draft, groupId: event.target.value })}>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label>
       <label>文件夹<select value={draft.folderId || ""} onChange={(event) => setDraft({ ...draft, folderId: event.target.value || undefined })}><option value="">不放入文件夹</option>{folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label>
       <label className="check-row"><input type="checkbox" checked={Boolean(draft.pinned)} onChange={(event) => setDraft({ ...draft, pinned: event.target.checked })} /> 固定到 Dock</label>
@@ -3397,6 +3495,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
 }) {
   const [tab, setTab] = useState<"widgets" | "wallpapers" | "icons">("widgets");
   const [category, setCategory] = useState<"全部" | "信息" | "效率" | "生活">("全部");
+  const [wallpaperCategory, setWallpaperCategory] = useState<"全部" | WallpaperCategory | "我的">("全部");
   const [query, setQuery] = useState("");
   const settings = state.settings;
   const sizes = { ...defaultWidgetSizes, ...(settings.widgetSizes || {}) };
@@ -3453,8 +3552,9 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
   const wallpaperCollection = settings.wallpaperCollection || [];
   const wallpaperItems = [
     ...builtInWallpapers.map((wallpaper) => ({ ...wallpaper, url: wallpaper.mobileUrl || wallpaper.url, custom: false })),
-    ...customWallpapers.map((wallpaper) => ({ id: wallpaper.id, name: wallpaper.name, url: wallpaper.dataUrl, custom: true }))
+    ...customWallpapers.map((wallpaper) => ({ id: wallpaper.id, name: wallpaper.name, url: wallpaper.dataUrl, category: "我的" as const, custom: true }))
   ];
+  const visibleWallpapers = wallpaperItems.filter((wallpaper) => wallpaperCategory === "全部" || wallpaper.category === wallpaperCategory);
   const selectedWallpaperCount = wallpaperItems.filter((wallpaper) => wallpaperCollection.includes(wallpaper.id)).length;
 
   const toggleWallpaperCollection = (id: string) => {
@@ -3570,15 +3670,20 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
               </label>
             </div>
           </div>
+          <div className="resource-filters wallpaper-filters" aria-label="壁纸风格">
+            {(["全部", "精选", "日系", "动漫", "猫咪", "酷感", "我的"] as const).map((item) => (
+              <button type="button" className={wallpaperCategory === item ? "active" : ""} key={item} onClick={() => setWallpaperCategory(item)}>{item}</button>
+            ))}
+          </div>
           <div className="resource-wallpaper-grid">
-            {wallpaperItems.map((wallpaper) => (
+            {visibleWallpapers.map((wallpaper) => (
               <div className="resource-wallpaper-item" key={wallpaper.id}>
                 <button
                   type="button"
                   className={`wallpaper-preview ${!settings.wallpaper && !settings.wallpaperRotation && settings.wallpaperPreset === wallpaper.id ? "active" : ""}`}
-                  style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(3,7,18,.58)), url(${wallpaper.url})` }}
                   onClick={() => chooseWallpaper(wallpaper.id)}
                 >
+                  <img src={wallpaper.url} alt="" loading="lazy" decoding="async" />
                   <span>{wallpaper.name}</span>
                 </button>
                 <button
@@ -3616,7 +3721,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
             <div className="resource-shortcut-icon-list">
               {shortcuts.map((shortcut) => (
                 <button type="button" key={shortcut.id} onClick={() => onEditShortcut(shortcut)}>
-                  <span className="shortcut-icon" style={{ backgroundColor: shortcut.iconColor }}>
+                  <span className="shortcut-icon">
                     <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} fallback={shortcut.title.slice(0, 1)} />
                   </span>
                   <span>
@@ -3764,15 +3869,12 @@ function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateSt
       </div>
       <label>城市<input value={settings.city} onChange={(event) => setSetting("city", event.target.value)} /></label>
       <label>时间显示<select value={settings.timeZone || "Asia/Shanghai"} onChange={(event) => setSetting("timeZone", event.target.value)}>{timeZoneOptions.map((zone) => <option value={zone.value} key={zone.value}>{zone.label} · {zone.value}</option>)}</select></label>
-      <div className="color-settings">
-        <label>日期时间颜色<input type="color" value={settings.dateTimeColor || "#ffffff"} onChange={(event) => setSetting("dateTimeColor", event.target.value)} /></label>
-        <label>小组件强调色<input type="color" value={settings.widgetAccentColor || "#2dd4bf"} onChange={(event) => setSetting("widgetAccentColor", event.target.value)} /></label>
-      </div>
+      <label>日期时间颜色<input type="color" value={settings.dateTimeColor || "#ffffff"} onChange={(event) => setSetting("dateTimeColor", event.target.value)} /></label>
       <label className="check-row">
         <input type="checkbox" checked={settings.weatherUseLocation ?? false} onChange={(event) => setSetting("weatherUseLocation", event.target.checked)} />
         天气跟随设备位置
       </label>
-      <label>毛玻璃<input type="range" min="35" max="92" value={settings.glass} onChange={(event) => setSetting("glass", Number(event.target.value))} /></label>
+      <label>卡片透明度<input type="range" min="28" max="88" value={settings.glass} onChange={(event) => setSetting("glass", Number(event.target.value))} /></label>
       <label>图标尺寸<input type="range" min="48" max="80" value={settings.iconSize} onChange={(event) => setSetting("iconSize", Number(event.target.value))} /></label>
       <label>网格密度<select value={settings.gridDensity} onChange={(event) => setSetting("gridDensity", event.target.value as "comfortable" | "compact")}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label>
       <label>Dock 位置<select value={settings.dockPosition} onChange={(event) => setSetting("dockPosition", event.target.value as "top" | "bottom")}><option value="bottom">底部</option><option value="top">顶部</option></select></label>

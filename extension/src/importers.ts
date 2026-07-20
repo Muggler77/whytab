@@ -21,7 +21,7 @@ export const faviconHostFor = (url: string) => {
 export const faviconFor = (url: string) => {
   const host = faviconHostFor(url);
   if (!host) return undefined;
-  return `https://www.google.com/s2/favicons?domain_url=https://${host}&sz=128`;
+  return `https://www.google.com/s2/favicons?domain_url=https://${host}&sz=256`;
 };
 
 export const fallbackFaviconFor = (url: string) => {
