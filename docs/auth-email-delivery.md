@@ -15,6 +15,7 @@ The public web app currently uses:
 - Email provider: Supabase built-in Auth sender
 - Custom SMTP: disabled until an owned domain is available
 - Send Email Hook: disabled until an owned sender domain is available
+- Confirmation template: branded bilingual whytab template tracked in `docs/supabase-confirm-signup-email.html`
 
 `pages.dev` is a shared Cloudflare domain. A Pages project can use it for hosting and Auth redirects, but it cannot create DNS records for `no-reply@whytab.pages.dev`. Supabase's built-in sender is therefore suitable only as a temporary low-volume path.
 
@@ -27,7 +28,7 @@ Additional Redirect URL: https://whytab.pages.dev/
 
 When an owned domain is purchased, configure Resend or another provider with DKIM, SPF, return-path, and DMARC records, then enable Supabase Custom SMTP.
 
-After Custom SMTP is enabled, paste the branded confirmation template from:
+The branded confirmation template is deployed to Supabase Auth and tracked at:
 
 ```txt
 docs/supabase-confirm-signup-email.html
@@ -36,7 +37,7 @@ docs/supabase-confirm-signup-email.html
 Use this subject:
 
 ```txt
-确认你的 whytab 同步账号
+Verify your whytab email / 验证 whytab 邮箱
 ```
 
 ## Optional Send Email Hook

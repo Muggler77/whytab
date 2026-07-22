@@ -66,14 +66,14 @@ Recommended sender settings:
 - Sender name: `whytab`
 - Sender email: use a verified sender/domain that belongs to the project.
 
-Hosted Supabase projects require Custom SMTP before the dashboard allows editing email subjects and bodies. Without Custom SMTP, Supabase sends authentication email using its default templates.
+The current Supabase Auth project uses the built-in sender with the branded bilingual confirmation template tracked in `docs/supabase-confirm-signup-email.html`. Custom SMTP and the Send Email Hook remain disabled until an owned sender domain is available.
 
 The temporary `pages.dev` deployment uses Supabase's built-in Auth sender because Cloudflare's shared `pages.dev` zone cannot be verified as a custom email sender domain. Before higher-volume public signup, add an owned domain and configure Custom SMTP or a Send Email Hook as documented in `docs/auth-email-delivery.md`.
 
 Recommended confirmation email subject:
 
 ```txt
-确认你的 whytab 同步账号
+Verify your whytab email / 验证 whytab 邮箱
 ```
 
 Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://whytab.pages.dev/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
