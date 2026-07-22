@@ -93,8 +93,8 @@ type AuthResult = { status: "signed-in" | "verification-sent"; message: string }
 type ToastAction = { label: string; onClick: () => void };
 
 const SYNC_RESTORE_KEY = "sync-restore-point";
-const PUBLIC_AUTH_REDIRECT_URL = "https://why-tool.com/";
-const HOSTED_APP_ORIGIN = "https://why-tool.com";
+const PUBLIC_AUTH_REDIRECT_URL = "https://whytab.pages.dev/";
+const HOSTED_APP_ORIGIN = "https://whytab.pages.dev";
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;

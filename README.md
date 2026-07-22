@@ -4,13 +4,13 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.0**. See the [bilingual release notes](docs/releases/0.5.0.md).
+Current release: **0.5.1**. See the [bilingual release notes](docs/releases/0.5.1.md).
 
 ## Product and Framework
 
 whytab is both a ready-to-use product and an open-source configurable framework.
 
-- For everyday users: use the official web app at `https://why-tool.com/`, register or sign in with email and password, and sync with the hosted whytab service. No server setup, service URL, API key, or access key is required.
+- For everyday users: use the official web app at `https://whytab.pages.dev/`, register or sign in with email and password, and sync with the hosted whytab service. No server setup, service URL, API key, or access key is required.
 - For developers and teams: fork this repository, change the UI or sync provider, and self-host an independent deployment by providing your own build-time configuration.
 
 ## Highlights
@@ -35,7 +35,7 @@ whytab is both a ready-to-use product and an open-source configurable framework.
 Open the public web app:
 
 ```text
-https://why-tool.com/
+https://whytab.pages.dev/
 ```
 
 This is the easiest way to try whytab on iPhone, iPad, Android, tablets, and desktop browsers.
@@ -45,6 +45,8 @@ This is the easiest way to try whytab on iPhone, iPad, Android, tablets, and des
 - Desktop: open the link in Chrome, Edge, Safari, Firefox, or another modern browser.
 
 The web app does not replace the browser's new tab page, but it provides the same dashboard, widgets, local storage, backup, and optional account sync.
+
+Cloudflare Pages deployment uses the root `wrangler.toml` and publishes `extension/dist`. The shared `pages.dev` hostname is free and can later be replaced by an owned custom domain without changing the Supabase project or synchronized user data.
 
 ### Install as a Chrome or Edge new tab extension
 
@@ -85,7 +87,7 @@ Sign-in is optional.
 在线版地址：
 
 ```text
-https://why-tool.com/
+https://whytab.pages.dev/
 ```
 
 - 手机和平板：打开上面的地址，添加到主屏幕即可使用。
@@ -95,6 +97,14 @@ https://why-tool.com/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.1 Cloudflare Pages 迁移
+
+- 官方网页入口迁移到免费的 `https://whytab.pages.dev/`，不再依赖旧自定义域名。
+- Supabase 项目、账号、云端同步表和数据结构保持不变，已同步的数据无需迁移。
+- Chrome / Edge 扩展数据保存在扩展自身空间，不受网页域名变化影响。
+- 网页未登录数据仍遵循浏览器同源隔离：旧网址下仅存在本地的数据需要先导出 JSON，再在新网址导入。
+- 登录回调、验证邮件链接、版本检查、扩展权限和部署配置统一使用新地址。
 
 ### 0.5.0 差异化小组件
 
@@ -166,7 +176,7 @@ https://why-tool.com/
 
 whytab 同时提供两种使用方式：
 
-- 普通用户：直接使用官方在线版 `https://why-tool.com/`，注册或登录账号即可同步，不需要自己部署服务。
+- 普通用户：直接使用官方在线版 `https://whytab.pages.dev/`，注册或登录账号即可同步，不需要自己部署服务。
 - 开发者或团队：可以 fork 这个仓库，把它当作一套可配置的新标签页/PWA 框架，替换界面、同步服务或部署环境，搭建自己的独立版本。
 
 ## Supported Platforms
@@ -352,7 +362,7 @@ For Chrome Web Store submission, upload a zip whose root contains `manifest.json
 
 ## Mobile and Tablet Web App
 
-The same frontend can be deployed to GitHub Pages or any static hosting provider. The public whytab build uses `https://why-tool.com/`; the previous GitHub Pages URL may remain as a legacy fallback while older builds are still in use. On iPhone and iPad, open the deployed URL in Safari and use "Add to Home Screen". On Android, use the browser's install/add-to-home-screen option.
+The same frontend can be deployed to Cloudflare Pages, GitHub Pages, or any static hosting provider. The public whytab build uses `https://whytab.pages.dev/`; the GitHub Pages URL remains a deployment fallback. On iPhone and iPad, open the deployed URL in Safari and use "Add to Home Screen". On Android, use the browser's install/add-to-home-screen option.
 
 After signing in with the same account, mobile and desktop clients can merge shortcuts, widgets, notes, todos, and settings.
 
@@ -365,11 +375,11 @@ The hosted sync backend uses Supabase:
 - Row Level Security to isolate per-user data
 - An Edge Function for cached Bank of China exchange-rate data
 
-Public users do not need to enter service URLs or API keys. The official hosted app at `https://why-tool.com/` already contains the public client configuration required to talk to the whytab sync service. A user only registers or signs in with email and password.
+Public users do not need to enter service URLs or API keys. The official hosted app at `https://whytab.pages.dev/` already contains the public client configuration required to talk to the whytab sync service. A user only registers or signs in with email and password.
 
 Only developers who fork the repository and self-host their own independent copy need to configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_URL`, then run the migration in `supabase/migrations/0001_init_whytab.sql`. In that mode, this repository works as a configurable framework: the frontend, Auth provider, database project, email domain, and deployment target can be replaced by the self-hosting developer.
 
-For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. The public whytab deployment uses Resend through Supabase Custom SMTP, with the production details documented in `docs/auth-email-delivery.md`. The branded confirmation template in `docs/supabase-confirm-signup-email.html` clearly says it is from whytab, explains that it verifies a sync account, includes the whytab logo, and keeps the `{{ .ConfirmationURL }}` variable intact.
+For email verification, configure the Supabase Auth Site URL and Redirect URLs to the hosted app URL. A `pages.dev` subdomain cannot be used as a custom email sender domain, so the temporary free deployment uses Supabase's built-in Auth sender until an owned domain is added. The branded confirmation template in `docs/supabase-confirm-signup-email.html` keeps the `{{ .ConfirmationURL }}` variable intact.
 
 ## Import and Backup
 

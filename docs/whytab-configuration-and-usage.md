@@ -4,7 +4,7 @@ This document describes how to configure and operate whytab without exposing pri
 
 whytab can be used in two modes:
 
-- Official hosted product: normal users register or sign in at `https://why-tool.com/` and use the hosted sync service.
+- Official hosted product: normal users register or sign in at `https://whytab.pages.dev/` and use the hosted sync service.
 - Self-hosted framework: developers fork the repository, provide their own frontend configuration, Supabase project, email delivery setup, and deployment target.
 
 ## Local-First Behavior
@@ -54,8 +54,8 @@ Email verification is controlled in the Supabase project, not in the end-user UI
 
 Recommended Auth URL settings:
 
-- Site URL: `https://why-tool.com/`
-- Redirect URLs / Additional Redirect URLs: `https://why-tool.com/`
+- Site URL: `https://whytab.pages.dev/`
+- Redirect URLs / Additional Redirect URLs: `https://whytab.pages.dev/`
 - Legacy redirect URL while old builds are still in use: `https://muggler77.github.io/whytab/`
 - Local development redirect URL, if needed: `http://localhost:5173/`
 
@@ -68,7 +68,7 @@ Recommended sender settings:
 
 Hosted Supabase projects require Custom SMTP before the dashboard allows editing email subjects and bodies. Without Custom SMTP, Supabase sends authentication email using its default templates.
 
-For public signup, do not rely on the default Supabase sender. The production deployment uses Resend through Supabase Custom SMTP; the optional Send Email Hook remains documented in `docs/auth-email-delivery.md` for teams that prefer hook-based delivery.
+The temporary `pages.dev` deployment uses Supabase's built-in Auth sender because Cloudflare's shared `pages.dev` zone cannot be verified as a custom email sender domain. Before higher-volume public signup, add an owned domain and configure Custom SMTP or a Send Email Hook as documented in `docs/auth-email-delivery.md`.
 
 Recommended confirmation email subject:
 
@@ -76,7 +76,7 @@ Recommended confirmation email subject:
 确认你的 whytab 同步账号
 ```
 
-Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://why-tool.com/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
+Use the full HTML body in `docs/supabase-confirm-signup-email.html`. It includes the public whytab logo at `https://whytab.pages.dev/icons/icon128.png`, explains why the email was sent, and keeps the wording focused on verifying a sync account.
 
 The template should keep Supabase's `{{ .ConfirmationURL }}` variable unchanged. Supabase replaces it with the real verification link.
 

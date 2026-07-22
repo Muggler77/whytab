@@ -7,30 +7,25 @@ Production email delivery can be configured in either of these ways:
 1. Supabase Custom SMTP
 2. Supabase Send Email Hook with a provider such as Resend
 
-## Chosen Production Path
+## Temporary Free Hosting Path
 
-For the public whytab launch, use:
+The public web app currently uses:
 
-- Email provider: Resend Free
-- Domain target: `why-tool.com`
-- Sender target: `WhyTab <no-reply@why-tool.com>`
-- Supabase integration: Custom SMTP
+- Web app: `https://whytab.pages.dev/`
+- Email provider: Supabase built-in Auth sender
+- Custom SMTP: disabled until an owned domain is available
+- Send Email Hook: disabled until an owned sender domain is available
 
-Resend Free currently fits early public signup because it includes a free monthly quota, a daily sending limit, and one custom domain. Add the Resend DKIM, return-path/SPF, and DMARC records in Cloudflare DNS for `why-tool.com`, then wait until Resend marks the domain as verified.
+`pages.dev` is a shared Cloudflare domain. A Pages project can use it for hosting and Auth redirects, but it cannot create DNS records for `no-reply@whytab.pages.dev`. Supabase's built-in sender is therefore suitable only as a temporary low-volume path.
 
-Supabase Auth SMTP settings:
+Configure Supabase Auth URL settings as follows:
 
 ```txt
-Sender email address: no-reply@why-tool.com
-Sender name: WhyTab
-Host: smtp.resend.com
-Port number: 465
-Minimum interval per user: 60
-Username: resend
-Password: Resend API key scoped to sending access for why-tool.com
+Site URL: https://whytab.pages.dev/
+Additional Redirect URL: https://whytab.pages.dev/
 ```
 
-Do not commit the Resend API key. Store it only in Supabase's encrypted Custom SMTP password field.
+When an owned domain is purchased, configure Resend or another provider with DKIM, SPF, return-path, and DMARC records, then enable Supabase Custom SMTP.
 
 After Custom SMTP is enabled, paste the branded confirmation template from:
 
@@ -61,11 +56,11 @@ AUTH_EMAIL_FROM
 AUTH_EMAIL_PUBLIC_APP_URL
 ```
 
-Recommended values:
+Example values after an owned email domain is available:
 
 ```txt
-AUTH_EMAIL_FROM=whytab <no-reply@why-tool.com>
-AUTH_EMAIL_PUBLIC_APP_URL=https://why-tool.com/
+AUTH_EMAIL_FROM=whytab <no-reply@YOUR_DOMAIN>
+AUTH_EMAIL_PUBLIC_APP_URL=https://YOUR_DOMAIN/
 ```
 
 Do not commit these values. Set them only in Supabase Secrets.
