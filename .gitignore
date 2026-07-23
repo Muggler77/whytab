@@ -8,3 +8,4 @@ release/
 网页数据/
 extension/public/wetab-recovery.json
 supabase/.temp/
+extension/web-dist/

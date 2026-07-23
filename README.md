@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.2**. See the [bilingual release notes](docs/releases/0.5.2.md).
+Current release: **0.5.3**. See the [bilingual release notes](docs/releases/0.5.3.md).
 
 ## Product and Framework
 
@@ -46,7 +46,7 @@ This is the easiest way to try whytab on iPhone, iPad, Android, tablets, and des
 
 The web app does not replace the browser's new tab page, but it provides the same dashboard, widgets, local storage, backup, and optional account sync.
 
-Cloudflare Pages deployment uses the root `wrangler.toml` and publishes `extension/dist`. The shared `pages.dev` hostname is free and can later be replaced by an owned custom domain without changing the Supabase project or synchronized user data.
+Cloudflare Pages deployment uses the root `wrangler.toml` and publishes `extension/web-dist`. The Chrome/Edge package is built separately in `extension/dist`, so Cloudflare-only files such as `_headers` can never make the browser extension invalid. The shared `pages.dev` hostname is free and can later be replaced by an owned custom domain without changing the Supabase project or synchronized user data.
 
 Automatic Pages deployment expects repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be restricted to Cloudflare Pages edit access for the whytab account. When these secrets are absent, CI still builds and verifies the web app but skips deployment.
 
@@ -100,6 +100,12 @@ https://whytab.pages.dev/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.3 扩展发布修复
+
+- Chrome/Edge 扩展和 Cloudflare Pages 使用独立输出目录。
+- 扩展包不再包含 Cloudflare 专用 `_headers` 文件，可正常作为未打包扩展加载。
+- 此版本不修改用户数据、账号或同步逻辑。
 
 ### 0.5.2 数据安全与交互稳定性
 

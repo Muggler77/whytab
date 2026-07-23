@@ -29,6 +29,10 @@ npm run build
 
 8. Confirm private local media is absent from `prepareCloudState()` output and complete export/import round-trips all AppState fields.
 
+9. Confirm `extension/dist` contains no Cloudflare-only `_headers` file or other filename beginning with `_`.
+
+10. Run `npm run build:web` separately and confirm only `extension/web-dist` contains `_headers`.
+
 ## Data Safety Rules
 
 - Never delete or rewrite local user data during an update without first creating a backup.

@@ -77,7 +77,7 @@ try {
   assert.equal(backup.state.shortcuts[0].url, "https://openai.com", "manual backup must preserve shortcuts");
   assert.equal(backup.ownerId, "user-1", "migration backups must retain their account owner");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.2" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.3" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
