@@ -13,6 +13,7 @@ Without login, user data is stored in the current browser profile through Indexe
 - Notes
 - Countdowns
 - Theme and appearance settings
+- Private photo-frame images and custom wallpaper image data
 - Local sync metadata
 
 This data is not sent to the sync backend unless the user signs in.
@@ -30,6 +31,16 @@ Cloud sync includes:
 - Notes
 - Countdowns
 - Settings
+
+Private photo-frame images, inline wallpaper data, and uploaded custom wallpapers are deliberately removed from cloud snapshots. They remain on the device and can be moved through a user-created complete backup.
+
+Cloud snapshots are protected by Auth, RLS, account-scoped restore points, and optimistic concurrency. They are not end-to-end encrypted, so the hosted database operator can technically access synchronized cloud fields. Do not place passwords or highly sensitive secrets in notes or shortcut titles.
+
+## Website Icons
+
+When automatic website icon lookup is enabled, whytab can request icons from the saved website and public favicon providers such as Google, DuckDuckGo, and Simple Icons. Those requests can reveal the requested website hostname to the provider. Resolved icon locations and responses are cached to reduce repeat requests.
+
+Users can disable automatic website icon lookup in Settings. Manually selected local or direct icon images continue to work.
 
 ## User Isolation
 
@@ -73,7 +84,11 @@ Never commit:
 - Build-time environment injection for public config
 - Supabase Auth for account identity
 - Supabase Row Level Security for cloud data
-- Local JSON export for user-controlled backups
+- Complete local JSON export and restore for user-controlled backups
+- Account-scoped restore points and migration backups
+- Server-revision conflict detection for multi-device writes
+- Device-local handling for private photos and custom wallpaper data
+- CSP, HSTS, frame blocking, and browser permission policy on the hosted app
 - No tracked personal migration data
 
 ## Limitations
@@ -87,3 +102,4 @@ Security therefore depends on:
 - Least-privilege database access
 - Careful handling of exported user data
 - Optional Supabase protections such as email confirmation, rate limits, and CAPTCHA
+- Protecting exported backup files, because they can contain the user's complete local dashboard state

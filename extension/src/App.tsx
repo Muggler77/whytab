@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
+import { accountScopedKey, downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
 import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText, siteIconCandidatesFor } from "./importers";
 import { MIGRATION_BACKUP_KEY, type StateBackup } from "./migrations";
@@ -68,15 +68,19 @@ import { checkForUpdate, type UpdateCheckResult } from "./updates";
 import { APP_VERSION, DATA_SCHEMA_VERSION, UPDATE_TARGET_URL } from "./version";
 import {
   getUser,
+  getCachedUser,
   markPulled,
   markPushed,
   mergeRemote,
   normalizeState,
   pullSnapshot,
   pushSnapshot,
+  requestPasswordReset,
   signIn,
   signOut,
   signUp,
+  synchronizeSnapshot,
+  updatePassword,
   type SyncStatus
 } from "./sync";
 import type { AppState, Countdown, CustomNavPage, CustomNavPageIcon, RatesState, SearchEngine, Shortcut, ShortcutFolder, Todo, WeatherState, WidgetKey, WidgetSize } from "./types";
@@ -99,7 +103,11 @@ const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ICON_LOAD_TIMEOUT_MS = 3600;
-const MIN_SHARP_ICON_SIZE = 128;
+const MIN_SHARP_ICON_SIZE = 32;
+const MAX_CUSTOM_WALLPAPERS = 12;
+const RESOLVED_ICON_CACHE_KEY = "whytab:resolved-icons:v1";
+const MAX_RESOLVED_ICON_CACHE_ENTRIES = 300;
+let remoteIconLookupEnabled = true;
 const SortableWidgetGrid = lazy(() => import("./SortableWidgetGrid"));
 
 const isFreshCache = (updatedAt?: string, maxAge = WEATHER_CACHE_MAX_AGE_MS) => {
@@ -245,11 +253,37 @@ type IconCandidate = {
 };
 
 const resolvedIconCache = new Map<string, string>();
+try {
+  const stored = JSON.parse(localStorage.getItem(RESOLVED_ICON_CACHE_KEY) || "[]") as Array<[string, string]>;
+  stored.slice(-MAX_RESOLVED_ICON_CACHE_ENTRIES).forEach(([key, value]) => resolvedIconCache.set(key, value));
+} catch {
+  localStorage.removeItem(RESOLVED_ICON_CACHE_KEY);
+}
+
+const rememberResolvedIcon = (key: string, value: string) => {
+  resolvedIconCache.delete(key);
+  resolvedIconCache.set(key, value);
+  while (resolvedIconCache.size > MAX_RESOLVED_ICON_CACHE_ENTRIES) {
+    const oldest = resolvedIconCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    resolvedIconCache.delete(oldest);
+  }
+  try {
+    localStorage.setItem(RESOLVED_ICON_CACHE_KEY, JSON.stringify([...resolvedIconCache]));
+  } catch {
+    // Browser HTTP cache and the in-memory map remain available when storage is full.
+  }
+};
 
 const isVectorIconUrl = (url: string) => /(?:\.svg(?:[?#]|$)|^data:image\/svg\+xml)/i.test(url);
 
 const iconCandidatesFor = (url: string, iconUrl?: string, title = "") => {
   const builtInIcon = builtInShortcutIconFor(iconUrl);
+  if (!remoteIconLookupEnabled) {
+    return iconUrl && !builtInIcon && !isGeneratedFavicon(iconUrl)
+      ? [{ url: iconUrl, kind: "site-art" as const, vector: isVectorIconUrl(iconUrl) }]
+      : [];
+  }
   const directCandidates = siteIconCandidatesFor(url);
   const curated = curatedIconFor(url, title);
   const serviceIcon = faviconFor(url);
@@ -347,7 +381,7 @@ function ShortcutIconImage({ url, iconUrl, title = "", alt = "", fallback = "", 
         className={`shortcut-icon-image is-${current.kind} ${loaded ? "is-loaded" : ""}`}
         src={shouldLoad ? current.url : undefined}
         alt={alt}
-        loading="eager"
+        loading={priority ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
         onLoad={(event) => {
@@ -360,7 +394,7 @@ function ShortcutIconImage({ url, iconUrl, title = "", alt = "", fallback = "", 
             return;
           }
           loadedRef.current = true;
-          resolvedIconCache.set(candidateKey, current.url);
+          rememberResolvedIcon(candidateKey, current.url);
           setLoaded(true);
         }}
         onError={() => {
@@ -598,6 +632,7 @@ export default function App() {
   const lastSyncedUpdatedAtRef = useRef<string | undefined>();
   const wheelPageLockRef = useRef(0);
   const toastTimerRef = useRef<number | undefined>();
+  const navigationCloseTimerRef = useRef<number | undefined>();
   const shellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -621,8 +656,20 @@ export default function App() {
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      if (navigationCloseTimerRef.current) window.clearTimeout(navigationCloseTimerRef.current);
     };
   }, []);
+
+  const openNavigation = () => {
+    if (navigationCloseTimerRef.current) window.clearTimeout(navigationCloseTimerRef.current);
+    setNavigationOpen(true);
+  };
+
+  const scheduleNavigationClose = () => {
+    if (navigationDisplay !== "auto") return;
+    if (navigationCloseTimerRef.current) window.clearTimeout(navigationCloseTimerRef.current);
+    navigationCloseTimerRef.current = window.setTimeout(() => setNavigationOpen(false), 420);
+  };
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 700px)");
@@ -637,12 +684,41 @@ export default function App() {
     stateRef.current = next;
   };
 
+  const syncRestoreKey = (userId = activeUserIdRef.current) => accountScopedKey(SYNC_RESTORE_KEY, userId);
+  const migrationBackupKey = (userId = activeUserIdRef.current) => accountScopedKey(MIGRATION_BACKUP_KEY, userId);
+
+  const refreshBackupAvailability = async (userId = activeUserIdRef.current) => {
+    const [syncBackup, migrationBackup] = await Promise.all([
+      readKey(syncRestoreKey(userId)),
+      readKey(migrationBackupKey(userId))
+    ]);
+    setRestoreAvailable(Boolean(syncBackup));
+    setMigrationBackupAvailable(Boolean(migrationBackup));
+  };
+
   const withCurrentServiceConfig = (next: AppState, source = stateRef.current) => ({
     ...next,
     settings: {
       ...next.settings,
       supabaseUrl: source.settings.supabaseUrl,
       supabaseAnonKey: source.settings.supabaseAnonKey
+    }
+  });
+
+  const withLocalOnlyMedia = (next: AppState, source = stateRef.current) => ({
+    ...next,
+    settings: {
+      ...next.settings,
+      photoFrameImage: source.settings.photoFrameImage,
+      customWallpapers: source.settings.customWallpapers || [],
+      wallpaper: source.settings.wallpaper?.startsWith("data:") ? source.settings.wallpaper : next.settings.wallpaper,
+      wallpaperPreset: (source.settings.customWallpapers || []).some((item) => item.id === source.settings.wallpaperPreset)
+        ? source.settings.wallpaperPreset
+        : next.settings.wallpaperPreset,
+      wallpaperCollection: Array.from(new Set([
+        ...(next.settings.wallpaperCollection || []),
+        ...(source.settings.customWallpapers || []).map((item) => item.id)
+      ]))
     }
   });
 
@@ -672,11 +748,11 @@ export default function App() {
   });
 
   const activateSignedInUser = async (user: NonNullable<SyncStatus["user"]>, reason = "正在加载账号数据") => {
-    const wasAnonymousSession = !activeUserIdRef.current;
+    const previousUserId = activeUserIdRef.current;
+    const wasAnonymousSession = !previousUserId;
     const anonymousState = wasAnonymousSession ? portableAnonymousState(normalizeState(withCurrentServiceConfig(stateRef.current))) : undefined;
     const shouldCarryAnonymousData = Boolean(anonymousState && hasPortableLocalData(anonymousState));
-    activeUserIdRef.current = user.id;
-    setSync((old) => ({ ...old, user, syncing: true, message: reason }));
+    setSync((old) => ({ ...old, syncing: true, message: reason }));
 
     try {
       const local = await loadStateForAccount(user.id);
@@ -688,8 +764,7 @@ export default function App() {
         const normalizedRemote = normalizeState(remote);
         if (local.existed || shouldCarryAnonymousData) {
           next = mergeRemote(next, normalizedRemote);
-          await pushSnapshot(next);
-          next = markPushed(next);
+          next = await synchronizeSnapshot(next);
         } else {
           next = markPulled(withCurrentServiceConfig({
             ...normalizedRemote,
@@ -700,13 +775,14 @@ export default function App() {
           }), normalizedRemote);
         }
       } else {
-        await pushSnapshot(next);
-        next = markPushed(next);
+        next = await synchronizeSnapshot(next);
       }
 
+      activeUserIdRef.current = user.id;
       lastSyncedUpdatedAtRef.current = next.updatedAt;
       applyState(next);
       await saveStateForAccount(next, user.id);
+      await refreshBackupAvailability(user.id);
       setSync({
         user,
         syncing: false,
@@ -717,9 +793,9 @@ export default function App() {
       if (shouldCarryAnonymousData) showToast("已把未登录时的本机数据合并到当前账号");
       return next;
     } catch (error) {
+      activeUserIdRef.current = previousUserId;
       setSync((old) => ({
         ...old,
-        user,
         syncing: false,
         message: error instanceof Error ? `账号数据加载失败：${error.message}` : "账号数据加载失败"
       }));
@@ -730,7 +806,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const bootState = defaultState();
-      const user = await getUser(bootState.settings.supabaseUrl, bootState.settings.supabaseAnonKey).catch(() => null);
+      let user = await getCachedUser(bootState.settings.supabaseUrl, bootState.settings.supabaseAnonKey).catch(() => null);
+      if (navigator.onLine) {
+        try {
+          user = await getUser(bootState.settings.supabaseUrl, bootState.settings.supabaseAnonKey);
+        } catch {
+          // Keep the cached account available when the Auth service is temporarily unreachable.
+        }
+      }
       activeUserIdRef.current = user?.id;
       const accountState = await loadStateForAccount(user?.id);
       const normalized = normalizeState(accountState.state);
@@ -741,8 +824,7 @@ export default function App() {
       setWeather(cachedWeather);
       setRates(cachedRates);
       if (cachedRates) setRatesMessage("已缓存");
-      setRestoreAvailable(Boolean(await readKey(SYNC_RESTORE_KEY)));
-      setMigrationBackupAvailable(Boolean(await readKey(MIGRATION_BACKUP_KEY)));
+      await refreshBackupAvailability(user?.id);
       setSync((old) => ({ ...old, user, autoSync: normalized.sync?.autoSync, message: user ? `已登录 ${user.email}` : "未登录" }));
       if (shouldRefreshExternalData(normalized, cachedWeather, cachedRates)) {
         window.setTimeout(() => void refreshExternalData(normalized), 450);
@@ -904,6 +986,11 @@ export default function App() {
     ? state.settings.navigationDisplay
     : "always";
   const navigationSide = state.settings.navigationSide === "right" ? "right" : "left";
+  remoteIconLookupEnabled = state.settings.remoteIconLookup ?? true;
+
+  useEffect(() => {
+    setNavigationOpen(false);
+  }, [navigationDisplay, navigationSide]);
 
   useEffect(() => {
     setNavigationOpen(false);
@@ -995,14 +1082,15 @@ export default function App() {
   const chinaTimeText = formatterFor(selectedTimeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(clock);
 
   const saveSyncRestorePoint = async (label: string) => {
-    await writeKey(SYNC_RESTORE_KEY, { label, savedAt: nowIso(), state: stateRef.current });
+    await writeKey(syncRestoreKey(), { ownerId: activeUserIdRef.current, label, savedAt: nowIso(), state: stateRef.current });
     setRestoreAvailable(true);
   };
 
   const restorePreviousSync = async () => {
-    const snapshot = await readKey<{ label: string; savedAt: string; state: AppState }>(SYNC_RESTORE_KEY);
-    if (!snapshot?.state) {
+    const snapshot = await readKey<{ ownerId?: string; label: string; savedAt: string; state: AppState }>(syncRestoreKey());
+    if (!snapshot?.state || snapshot.ownerId !== activeUserIdRef.current) {
       showToast("还没有可回退的同步版本");
+      setRestoreAvailable(false);
       return;
     }
     const restored = { ...snapshot.state, updatedAt: nowIso() };
@@ -1011,8 +1099,8 @@ export default function App() {
   };
 
   const restoreMigrationBackup = async () => {
-    const backup = await readKey<StateBackup>(MIGRATION_BACKUP_KEY);
-    if (!backup?.state) {
+    const backup = await readKey<StateBackup>(migrationBackupKey());
+    if (!backup?.state || backup.ownerId !== activeUserIdRef.current) {
       showToast("没有可恢复的更新前备份");
       setMigrationBackupAvailable(false);
       return;
@@ -1035,10 +1123,7 @@ export default function App() {
         return;
       }
 
-      const remote = await pullSnapshot(current);
-      const merged = mergeRemote(current, remote);
-      await pushSnapshot(merged);
-      const pushed = markPushed(merged);
+      const pushed = await synchronizeSnapshot(current);
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
       applyState(pushed);
       await saveStateForAccount(pushed, user.id);
@@ -1354,9 +1439,10 @@ export default function App() {
       if (from < 0 || to < 0) return current;
       const [moved] = list.splice(from, 1);
       list.splice(to, 0, moved);
+      const updatedAt = nowIso();
       return {
         ...current,
-        shortcuts: list.map((item, order) => ({ ...item, order, updatedAt: item.id === dragId ? nowIso() : item.updatedAt }))
+        shortcuts: list.map((item, order) => item.order === order ? item : { ...item, order, updatedAt })
       };
     });
   };
@@ -1390,51 +1476,71 @@ export default function App() {
         ...current,
         shortcutFolders: (current.shortcutFolders || []).map((folder) => {
           const order = orderByKey.get(`folder:${folder.id}`);
-          return order === undefined ? folder : { ...folder, order, updatedAt: folder.id === sourceRef.id ? updatedAt : folder.updatedAt };
+          return order === undefined || order === folder.order ? folder : { ...folder, order, updatedAt };
         }),
         shortcuts: current.shortcuts.map((shortcut) => {
           const order = orderByKey.get(`shortcut:${shortcut.id}`);
-          return order === undefined ? shortcut : { ...shortcut, order, updatedAt: shortcut.id === sourceRef.id ? updatedAt : shortcut.updatedAt };
+          return order === undefined || order === shortcut.order ? shortcut : { ...shortcut, order, updatedAt };
         })
       };
     });
   };
 
   const exportData = () => {
-    const groupById = new Map(groups.map((group) => [group.id, group]));
-    const folderById = new Map(allFolders.map((folder) => [folder.id, folder]));
-    const rows = allShortcuts.map((shortcut) => {
-      const group = shortcut.groupId ? groupById.get(shortcut.groupId) : undefined;
-      const folder = shortcut.folderId ? folderById.get(shortcut.folderId) : undefined;
-      return {
-        title: shortcut.title,
-        url: shortcut.url,
-        iconUrl: shortcut.iconUrl,
-        iconColor: shortcut.iconColor,
-        groupName: group?.name,
-        folderName: folder?.name,
-        folderIconUrl: folder?.iconUrl,
-        pinned: shortcut.pinned,
-        order: shortcut.order
-      };
-    });
-    downloadJson(`whytab-shortcuts-${new Date().toISOString().slice(0, 10)}.json`, {
-      source: "whytab-shortcuts",
+    const current = normalizeState(stateRef.current);
+    const backupState: AppState = {
+      ...current,
+      settings: {
+        ...current.settings,
+        supabaseUrl: undefined,
+        supabaseAnonKey: undefined
+      },
+      sync: {
+        ...current.sync,
+        deviceId: "backup",
+        lastPulledAt: undefined,
+        lastPushedAt: undefined,
+        lastRemoteUpdatedAt: undefined,
+        remoteRevision: 0
+      }
+    };
+    downloadJson(`whytab-backup-${new Date().toISOString().slice(0, 10)}.json`, {
+      source: "whytab-backup",
       version: 1,
       exportedAt: nowIso(),
-      count: rows.length,
-      groups: groups.map(({ id, name, color, order }) => ({ id, name, color, order })),
-      folders: allFolders.map((folder) => ({
-        id: folder.id,
-        name: folder.name,
-        groupName: folder.groupId ? groupById.get(folder.groupId)?.name : undefined,
-        iconUrl: folder.iconUrl,
-        iconColor: folder.iconColor,
-        order: folder.order
-      })),
-      shortcuts: rows
+      appVersion: APP_VERSION,
+      dataSchemaVersion: DATA_SCHEMA_VERSION,
+      state: backupState
     });
-    showToast(`已导出 ${rows.length} 个快捷导航，包含分组和文件夹`);
+    showToast("已导出完整本地备份");
+  };
+
+  const importBackup = async (file: File) => {
+    const parsed = JSON.parse(await file.text()) as { source?: string; state?: AppState };
+    if (parsed.source !== "whytab-backup" || !parsed.state?.settings || !Array.isArray(parsed.state.shortcuts)) {
+      throw new Error("这不是有效的 whytab 完整备份文件");
+    }
+    if ((parsed.state.dataSchemaVersion || 1) > DATA_SCHEMA_VERSION) {
+      throw new Error("备份来自更新版本，请先升级 whytab");
+    }
+    const current = stateRef.current;
+    const restored = normalizeState(withCurrentServiceConfig({
+      ...parsed.state,
+      updatedAt: nowIso(),
+      sync: {
+        ...parsed.state.sync,
+        deviceId: current.sync.deviceId || uid(),
+        autoSync: current.sync.autoSync,
+        intervalSeconds: current.sync.intervalSeconds,
+        remoteRevision: current.sync.remoteRevision || 0,
+        lastPulledAt: current.sync.lastPulledAt,
+        lastPushedAt: current.sync.lastPushedAt,
+        lastRemoteUpdatedAt: current.sync.lastRemoteUpdatedAt
+      }
+    }, current));
+    applyState(restored);
+    await saveStateForAccount(restored, activeUserIdRef.current);
+    showToast("完整备份已恢复；登录状态和当前设备信息保持不变");
   };
 
   const showToast = (message: string, action?: ToastAction) => {
@@ -1615,8 +1721,22 @@ export default function App() {
       await saveSyncRestorePoint(mode === "merge" ? "合并同步前" : mode === "push" ? "上传覆盖前" : "拉取覆盖前");
       const current = stateRef.current;
       if (mode === "push") {
-        await pushSnapshot(current);
-        const pushed = markPushed(current);
+        let candidate = current;
+        let pushed: AppState | undefined;
+        for (let attempt = 0; attempt < 3 && !pushed; attempt += 1) {
+          const latestRemote = await pullSnapshot(candidate);
+          candidate = {
+            ...candidate,
+            sync: { ...candidate.sync, remoteRevision: latestRemote?.sync?.remoteRevision || 0 }
+          };
+          try {
+            const revision = await pushSnapshot(candidate);
+            pushed = markPushed(candidate, revision);
+          } catch (error) {
+            if (attempt === 2) throw error;
+          }
+        }
+        if (!pushed) throw new Error("云端覆盖失败，请重试");
         lastSyncedUpdatedAtRef.current = pushed.updatedAt;
         applyState(pushed);
         await saveStateForAccount(pushed, activeUserIdRef.current);
@@ -1632,7 +1752,7 @@ export default function App() {
 
       if (mode === "pull") {
         const normalizedRemote = normalizeState(remote);
-        const pulled = markPulled({
+        const pulled = markPulled(withLocalOnlyMedia({
           ...normalizedRemote,
           settings: {
             ...normalizedRemote.settings,
@@ -1643,7 +1763,7 @@ export default function App() {
             ...current.sync,
             lastRemoteUpdatedAt: normalizedRemote.updatedAt
           }
-        }, normalizedRemote);
+        }, current), normalizedRemote);
         lastSyncedUpdatedAtRef.current = pulled.updatedAt;
         applyState(pulled);
         await saveStateForAccount(pulled, activeUserIdRef.current);
@@ -1651,9 +1771,7 @@ export default function App() {
         return;
       }
 
-      const merged = mergeRemote(current, remote);
-      await pushSnapshot(merged);
-      const pushed = markPushed(merged);
+      const pushed = await synchronizeSnapshot(mergeRemote(current, remote));
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
       applyState(pushed);
       await saveStateForAccount(pushed, activeUserIdRef.current);
@@ -1841,7 +1959,19 @@ export default function App() {
           </button>
         )}
 
-        <nav className="page-nav" aria-label="whytab 页面切换">
+        {navigationDisplay === "auto" && (
+          <button
+            type="button"
+            className="page-nav-auto-trigger"
+            aria-label="展开页面导航"
+            title="展开页面导航"
+            onPointerEnter={openNavigation}
+            onFocus={openNavigation}
+            onClick={() => setNavigationOpen((value) => !value)}
+          />
+        )}
+
+        <nav className="page-nav" aria-label="whytab 页面切换" onPointerEnter={openNavigation} onPointerLeave={scheduleNavigationClose}>
           <div className="page-nav-main">
             <button className={activePage === "widgets" ? "active" : ""} onClick={() => goToPage("widgets")} title="主页小组件">
               <CalendarDays size={21} />
@@ -2170,6 +2300,7 @@ export default function App() {
           migrationBackupAvailable={migrationBackupAvailable}
           updateState={updateState}
           onImport={() => setDialog("import")}
+          onImportBackup={importBackup}
           onExport={exportData}
           onRestoreMigrationBackup={restoreMigrationBackup}
           onCheckUpdate={() => runUpdateCheck(true)}
@@ -2214,9 +2345,20 @@ export default function App() {
             const blank = normalizeState(defaultState());
             applyState(blank);
             await saveStateForAccount(blank);
+            await refreshBackupAvailability(undefined);
             setSync({ user: null, syncing: false, autoSync: blank.sync?.autoSync, message: "未登录" });
             lastSyncedUpdatedAtRef.current = undefined;
             showToast("已退出登录，本机已切换到未登录空白数据");
+          }}
+          onResetPassword={async (email) => {
+            const { supabaseUrl, supabaseAnonKey } = state.settings;
+            if (!supabaseUrl || !supabaseAnonKey) throw new Error("同步服务暂未配置，请稍后再试");
+            await requestPasswordReset(supabaseUrl, supabaseAnonKey, email, getAuthRedirectUrl());
+          }}
+          onUpdatePassword={async (password) => {
+            const { supabaseUrl, supabaseAnonKey } = state.settings;
+            if (!supabaseUrl || !supabaseAnonKey) throw new Error("同步服务暂未配置，请稍后再试");
+            await updatePassword(supabaseUrl, supabaseAnonKey, password);
           }}
           onSync={doSync}
           restoreAvailable={restoreAvailable}
@@ -2400,7 +2542,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onMoveTile }: {
   return (
     <section className={`home-shortcuts ${draggingKey ? "is-arranging" : ""} ${editing ? "layout-editing touch-arranging" : ""}`} aria-label="主页快捷入口">
       <div className="home-shortcuts-row" style={{ "--icon": Math.max(48, Math.min(iconSize, 80)) + "px" } as React.CSSProperties}>
-        {tiles.map((item) => {
+        {tiles.map((item, index) => {
           const key = tileKey(item);
           return item.kind === "folder" ? (
           <button
@@ -2454,7 +2596,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onMoveTile }: {
             onDrop={(event) => dropTile(event, key)}
           >
             <span className="shortcut-icon">
-              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} title={item.shortcut.title} fallback={item.shortcut.title.slice(0, 1)} priority />
+              <ShortcutIconContent url={item.shortcut.url} iconUrl={item.shortcut.iconUrl} title={item.shortcut.title} fallback={item.shortcut.title.slice(0, 1)} priority={index < 8} />
             </span>
             <span>{item.shortcut.title}</span>
             {editing && <span className="tile-drag-handle" aria-hidden="true"><GripVertical size={14} /></span>}
@@ -3755,10 +3897,15 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
 
   const addCustomWallpapers = async (files: FileList | null) => {
     if (!files?.length) return;
-    const additions = await Promise.all(Array.from(files).slice(0, 12).map(async (file) => ({
+    const remaining = Math.max(0, MAX_CUSTOM_WALLPAPERS - customWallpapers.length);
+    if (!remaining) {
+      window.alert(`最多保存 ${MAX_CUSTOM_WALLPAPERS} 张自定义壁纸，请先删除旧壁纸。`);
+      return;
+    }
+    const additions = await Promise.all(Array.from(files).slice(0, remaining).map(async (file) => ({
       id: `custom-${uid()}`,
       name: file.name.replace(/\.[^.]+$/, "") || "我的壁纸",
-      dataUrl: await shrinkImage(file, 1920, 0.88),
+      dataUrl: await shrinkImage(file, 1600, 0.82),
       createdAt: nowIso()
     })));
     updateState((current) => ({
@@ -3835,7 +3982,7 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
       {tab === "wallpapers" && (
         <>
           <div className="resource-section-head">
-            <div><strong>我的壁纸集</strong><small>已选择 {selectedWallpaperCount} 张</small></div>
+            <div><strong>我的壁纸集</strong><small>已选择 {selectedWallpaperCount} 张 · 自定义壁纸仅保存在本机</small></div>
             <div className="wallpaper-actions">
               <label className="file-pick compact-upload">
                 <Upload size={15} />上传多张
@@ -4009,18 +4156,20 @@ function PageManagerDialog({ customPages, hiddenPages, onAdd, onDelete, onToggle
   );
 }
 
-function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateState, onImport, onExport, onRestoreMigrationBackup, onCheckUpdate, onClose }: {
+function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateState, onImport, onImportBackup, onExport, onRestoreMigrationBackup, onCheckUpdate, onClose }: {
   state: AppState;
   updateCheck: UpdateCheckResult;
   migrationBackupAvailable: boolean;
   updateState: (updater: (state: AppState) => AppState) => void;
   onImport: () => void;
+  onImportBackup: (file: File) => Promise<void>;
   onExport: () => void;
   onRestoreMigrationBackup: () => void;
   onCheckUpdate: () => void;
   onClose: () => void;
 }) {
   const settings = state.settings;
+  const noteConflicts = state.notes.filter((note) => !note.deletedAt && note.conflictBody);
   const setSetting = <K extends keyof AppState["settings"]>(key: K, value: AppState["settings"][K]) => {
     updateState((current) => ({ ...current, settings: { ...current.settings, [key]: value, updatedAt: nowIso() } }));
   };
@@ -4039,7 +4188,7 @@ function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateSt
     ? updateCheck.manifest.updateUrl || updateCheck.manifest.releaseNotesUrl || UPDATE_TARGET_URL
     : UPDATE_TARGET_URL;
   return (
-    <DialogShell title="外观设置" onClose={onClose}>
+    <DialogShell title="设置" onClose={onClose} className="settings-dialog-overlay">
       <label>主题<select value={settings.theme} onChange={(event) => setSetting("theme", event.target.value as "light" | "dark")}><option value="dark">深色</option><option value="light">浅色</option></select></label>
       <div className="settings-choice-group">
         <span className="settings-choice-label">桌面导航位置</span>
@@ -4067,19 +4216,45 @@ function SettingsDialog({ state, updateCheck, migrationBackupAvailable, updateSt
       <label>图标尺寸<input type="range" min="48" max="80" value={settings.iconSize} onChange={(event) => setSetting("iconSize", Number(event.target.value))} /></label>
       <label>网格密度<select value={settings.gridDensity} onChange={(event) => setSetting("gridDensity", event.target.value as "comfortable" | "compact")}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label>
       <label>Dock 位置<select value={settings.dockPosition} onChange={(event) => setSetting("dockPosition", event.target.value as "top" | "bottom")}><option value="bottom">底部</option><option value="top">顶部</option></select></label>
+      <label className="check-row">
+        <input type="checkbox" checked={settings.remoteIconLookup ?? true} onChange={(event) => setSetting("remoteIconLookup", event.target.checked)} />
+        自动查找网站高清图标
+      </label>
+      <p className="settings-helper">关闭后只显示手动设置的图片或文字图标。开启时，已解析的图标会缓存，避免每次打开重复查找。</p>
       <div className="settings-block data-settings">
         <div className="section-title compact-title">
           <div>
             <h3>数据</h3>
-            <p>导入、导出和本地备份</p>
+            <p>完整备份包含小组件、便签、壁纸、网站和设置</p>
           </div>
         </div>
         <div className="button-row split-row">
-          <button type="button" onClick={onImport}><Import size={16} /> 导入数据</button>
+          <button type="button" onClick={onImport}><Import size={16} /> 导入网站</button>
           <button type="button" onClick={onExport}><Download size={16} /> 导出备份</button>
         </div>
+        <label className="file-pick backup-file-pick">
+          <Upload size={16} /> 恢复完整备份
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onImportBackup(file).catch((error) => window.alert(error instanceof Error ? error.message : "备份恢复失败"));
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
         <button type="button" disabled={!migrationBackupAvailable} onClick={onRestoreMigrationBackup}><TimerReset size={16} /> 回到更新前数据</button>
       </div>
+      {noteConflicts.length > 0 && (
+        <div className="settings-block conflict-settings">
+          <div className="section-title compact-title"><div><h3>同步冲突</h3><p>{noteConflicts.length} 条旧版笔记有另一份内容</p></div></div>
+          <div className="button-row split-row">
+            <button type="button" onClick={() => downloadJson(`whytab-note-conflicts-${new Date().toISOString().slice(0, 10)}.json`, noteConflicts)}><Download size={16} /> 导出冲突内容</button>
+            <button type="button" onClick={() => updateState((current) => ({ ...current, notes: current.notes.map((note) => note.conflictBody ? { ...note, conflictBody: undefined, updatedAt: nowIso() } : note) }))}><Check size={16} /> 保留当前内容</button>
+          </div>
+        </div>
+      )}
       <div className="settings-block version-settings">
         <div className="section-title compact-title">
           <div>
@@ -4132,13 +4307,15 @@ function TimeZoneDialog({ current, onClose, onChoose }: { current: string; onClo
   );
 }
 
-function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onSync, restoreAvailable, onRestore }: {
+function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onResetPassword, onUpdatePassword, onSync, restoreAvailable, onRestore }: {
   state: AppState;
   sync: SyncStatus;
   updateState: (updater: (state: AppState) => AppState) => void;
   onClose: () => void;
   onLogin: (mode: "login" | "signup", email: string, password: string) => Promise<AuthResult>;
   onSignOut: () => Promise<void>;
+  onResetPassword: (email: string) => Promise<void>;
+  onUpdatePassword: (password: string) => Promise<void>;
   onSync: (mode: SyncMode) => Promise<void>;
   restoreAvailable: boolean;
   onRestore: () => Promise<void>;
@@ -4147,10 +4324,16 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const submit = async (mode: "login" | "signup") => {
+    if (mode === "signup" && password.length < 10) {
+      setError("密码至少需要 10 个字符");
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -4163,6 +4346,42 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : mode === "signup" ? "注册失败" : "登录失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const resetPassword = async () => {
+    if (!email) {
+      setError("请先填写邮箱地址");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await onResetPassword(email);
+      setNotice("密码重置邮件已发送，请前往邮箱继续操作。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "重置邮件发送失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const changePassword = async () => {
+    if (newPassword.length < 10) {
+      setError("新密码至少需要 10 个字符");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await onUpdatePassword(newPassword);
+      setNewPassword("");
+      setShowPasswordUpdate(false);
+      setNotice("密码已更新。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "密码更新失败");
     } finally {
       setBusy(false);
     }
@@ -4263,6 +4482,7 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
               <input
                 type={showPassword ? "text" : "password"}
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                minLength={authMode === "signup" ? 10 : undefined}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onKeyDown={handlePasswordKeyDown}
@@ -4282,13 +4502,14 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
           <p className="sync-auth-note">
             {authMode === "login"
               ? "使用同一个账号登录其他设备，即可合并同步你的 whytab 数据。未登录时在本机整理的内容也会自动带入当前账号。"
-              : "注册后会使用当前邮箱作为同步账号，未登录时在本机整理的内容会自动带入账号。"}
+              : "注册密码至少 10 个字符。验证邮箱后，即可在其他设备登录并同步。"}
           </p>
           {notice && <p className="sync-auth-success">{notice}</p>}
           {error && <p className="warning">{error}</p>}
           <button className="primary sync-submit" disabled={busy || !email || !password} onClick={() => submit(authMode)}>
             {busy ? "处理中" : authMode === "login" ? "登录并同步" : "注册并同步"}
           </button>
+          {authMode === "login" && <button type="button" className="sync-reset-password" disabled={busy || !email} onClick={() => void resetPassword()}>忘记密码</button>}
         </div>
       )}
       {sync.user && (
@@ -4304,8 +4525,17 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onS
             <button disabled={sync.syncing} onClick={() => onSync("pull")}><Download size={16} /> 云端覆盖本机</button>
           </div>
           <p className="sync-hint">合并同步会保留两端新增内容；同一项冲突时保留更新时间较新的版本。覆盖操作会先保存本机回退点。</p>
+          {showPasswordUpdate && (
+            <div className="sync-password-update">
+              <input type="password" minLength={10} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="输入至少 10 个字符的新密码" />
+              <button type="button" disabled={busy || newPassword.length < 10} onClick={() => void changePassword()}><Save size={16} /> 保存新密码</button>
+            </div>
+          )}
+          {notice && <p className="sync-auth-success">{notice}</p>}
+          {error && <p className="warning">{error}</p>}
           <div className="button-row">
             <button disabled={!restoreAvailable || sync.syncing} onClick={() => void onRestore()}>回到同步前版本</button>
+            <button type="button" onClick={() => { setShowPasswordUpdate((value) => !value); setError(""); setNotice(""); }}><KeyRound size={16} /> 修改密码</button>
             <button onClick={onSignOut}><LogOut size={16} /> 退出登录</button>
           </div>
         </div>

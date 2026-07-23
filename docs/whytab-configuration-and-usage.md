@@ -56,7 +56,6 @@ Recommended Auth URL settings:
 
 - Site URL: `https://whytab.pages.dev/`
 - Redirect URLs / Additional Redirect URLs: `https://whytab.pages.dev/`
-- Legacy redirect URL while old builds are still in use: `https://muggler77.github.io/whytab/`
 - Local development redirect URL, if needed: `http://localhost:5173/`
 
 The app passes `emailRedirectTo` during registration. Hosted web builds redirect back to the current web app URL. Extension builds redirect to the public web app so the verification link can complete in a normal browser page.

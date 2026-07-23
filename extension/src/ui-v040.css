@@ -588,15 +588,68 @@ a svg {
 
 .app.nav-auto.nav-left .page-nav {
   transform: translateX(calc(-100% + 10px)) translateY(-50%);
+  pointer-events: none;
 }
 
 .app.nav-auto.nav-right .page-nav {
   transform: translateX(calc(100% - 10px)) translateY(-50%);
+  pointer-events: none;
 }
 
+.app.nav-auto.nav-open .page-nav,
+.app.nav-auto .page-nav-auto-trigger:hover ~ .page-nav,
+.app.nav-auto .page-nav-auto-trigger:focus-visible ~ .page-nav,
 .app.nav-auto .page-nav:hover,
 .app.nav-auto .page-nav:focus-within {
   transform: translateX(0) translateY(-50%);
+  pointer-events: auto;
+}
+
+.page-nav-auto-trigger {
+  position: fixed;
+  top: 50%;
+  z-index: calc(var(--wt-z-nav) - 1);
+  width: 18px;
+  height: 168px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  transform: translateY(-50%);
+}
+
+.page-nav-auto-trigger::after {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 42px;
+  content: "";
+  background: color-mix(in srgb, var(--wt-text-soft) 36%, transparent);
+  border-radius: 3px;
+  opacity: 0.7;
+  transform: translateY(-50%);
+  transition: height var(--wt-fast), opacity var(--wt-fast);
+}
+
+.page-nav-auto-trigger:hover::after,
+.page-nav-auto-trigger:focus-visible::after {
+  height: 58px;
+  opacity: 1;
+}
+
+.app.nav-left .page-nav-auto-trigger {
+  left: 0;
+}
+
+.app.nav-left .page-nav-auto-trigger::after {
+  left: 2px;
+}
+
+.app.nav-right .page-nav-auto-trigger {
+  right: 0;
+}
+
+.app.nav-right .page-nav-auto-trigger::after {
+  right: 2px;
 }
 
 .app.nav-hidden .page-nav {
@@ -3807,7 +3860,10 @@ a svg {
 }
 
 .dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   width: min(620px, 100%);
+  height: min(820px, calc(100dvh - 48px));
   max-height: min(820px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--wt-text);
@@ -3859,8 +3915,9 @@ a svg {
 .dialog-body {
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - 108px);
-  padding: 18px;
+  min-height: 0;
+  max-height: none;
+  padding: 18px 18px 26px;
   gap: 14px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -4154,7 +4211,28 @@ a svg {
 
 .version-row strong {
   color: var(--wt-text);
+  font-size: 13px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.version-settings {
+  padding: 14px;
+  background: var(--wt-surface-soft);
+  border: 1px solid var(--wt-line);
+  border-radius: 6px;
+}
+
+.settings-helper {
+  margin: -6px 0 0;
+  color: var(--wt-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.backup-file-pick {
+  width: 100%;
+  justify-content: center;
 }
 
 .danger-button,
@@ -4953,6 +5031,25 @@ a svg {
   border-radius: var(--wt-radius);
 }
 
+.sync-reset-password {
+  align-self: center;
+  min-height: 34px !important;
+  padding: 0 10px;
+  color: var(--wt-text-soft);
+  background: transparent;
+  border: 0;
+}
+
+.sync-password-update {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.sync-password-update button {
+  white-space: nowrap;
+}
+
 .sync-toggle-row,
 .sync-interval-row {
   display: flex;
@@ -5377,7 +5474,8 @@ a svg {
   }
 
   .nav-hide-control,
-  .page-nav-trigger {
+  .page-nav-trigger,
+  .page-nav-auto-trigger {
     display: none !important;
   }
 
@@ -5546,6 +5644,7 @@ a svg {
   .timezone-popover .dialog,
   .widget-popover .dialog {
     width: 100%;
+    height: calc(100dvh - max(12px, env(safe-area-inset-top)));
     max-height: calc(100dvh - max(12px, env(safe-area-inset-top)));
     border-right: 0;
     border-bottom: 0;
@@ -5554,8 +5653,8 @@ a svg {
   }
 
   .dialog-body {
-    max-height: calc(100dvh - 70px - env(safe-area-inset-bottom));
-    padding: 16px 14px calc(18px + env(safe-area-inset-bottom));
+    max-height: none;
+    padding: 16px 14px calc(28px + env(safe-area-inset-bottom));
   }
 
   .dialog button,
@@ -5621,6 +5720,10 @@ a svg {
   .sync-status-grid,
   .sync-settings-panel,
   .sync-choice-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-password-update {
     grid-template-columns: 1fr;
   }
 

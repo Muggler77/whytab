@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.1**. See the [bilingual release notes](docs/releases/0.5.1.md).
+Current release: **0.5.2**. See the [bilingual release notes](docs/releases/0.5.2.md).
 
 ## Product and Framework
 
@@ -48,6 +48,8 @@ The web app does not replace the browser's new tab page, but it provides the sam
 
 Cloudflare Pages deployment uses the root `wrangler.toml` and publishes `extension/dist`. The shared `pages.dev` hostname is free and can later be replaced by an owned custom domain without changing the Supabase project or synchronized user data.
 
+Automatic Pages deployment expects repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be restricted to Cloudflare Pages edit access for the whytab account. When these secrets are absent, CI still builds and verifies the web app but skips deployment.
+
 ### Install as a Chrome or Edge new tab extension
 
 The extension version replaces the browser's new tab page on desktop Chromium browsers.
@@ -77,6 +79,7 @@ Sign-in is optional.
 
 - You can use whytab without an account. Your data stays in the current browser profile.
 - To sync across devices, open the account/sync panel and register with email and password.
+- Registration passwords require at least 10 characters. The login panel can send a password-reset email, and signed-in users can update their password.
 - Use the same account on another device to sync shortcuts, widgets, notes, todos, countdowns, settings, and layout.
 - If you created data before signing in, whytab keeps it locally and carries it into your account when you sign in.
 - Public users only need an email and password. They do not need to prepare a backend, service address, API key, access key, or advanced connection setting.
@@ -97,6 +100,15 @@ https://whytab.pages.dev/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.2 数据安全与交互稳定性
+
+- 同步备份按账号隔离，普通退出只退出当前设备，多设备写入使用服务器版本锁和冲突重试。
+- 完整备份覆盖网站、小组件、便签、待办、倒计时、日历、布局、设置和本地媒体；网站导入保持独立入口。
+- 私人照片与自定义壁纸仅保存在当前设备，不上传到云端；自定义壁纸增加数量和压缩限制。
+- 网站图标采用懒加载、解析结果持久缓存和浏览器缓存，并允许在设置中关闭第三方图标查询。
+- 修复设置窗口无法滚到底、版本信息不清晰和桌面导航自动隐藏抖动。
+- 网页增加 CSP、HSTS、权限策略、完整离线资源预缓存和 Cloudflare Pages 自动部署流程。
 
 ### 0.5.1 Cloudflare Pages 迁移
 

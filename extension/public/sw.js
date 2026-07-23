@@ -1,13 +1,23 @@
-const CACHE_NAME = "whytab-shell-v0.5.1";
+const CACHE_NAME = "whytab-shell-v0.5.2";
 const ICON_CACHE_NAME = "whytab-icons-v1";
-const APP_SHELL = ["./", "./app.webmanifest?v=0.5.1", "./icons/icon128.png?v=0.5.1", "./wallpapers/photo/mobile/aurora-lake.webp"];
+const APP_SHELL = ["./", "./app.webmanifest?v=0.5.2", "./icons/icon128.png?v=0.5.2", "./wallpapers/photo/mobile/aurora-lake.webp"];
 const ICON_HOSTS = new Set(["cdn.simpleicons.org", "icons.duckduckgo.com", "www.google.com"]);
 const PRESERVED_CACHES = new Set([CACHE_NAME, ICON_CACHE_NAME]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then(async (cache) => {
+        await cache.addAll(APP_SHELL);
+        const response = await fetch("./");
+        if (!response.ok) return;
+        const html = await response.clone().text();
+        await cache.put("./", response);
+        const builtAssets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+          .map((match) => new URL(match[1], self.location.href).href)
+          .filter((url) => new URL(url).origin === self.location.origin);
+        await Promise.all([...new Set(builtAssets)].map((url) => cache.add(url).catch(() => undefined)));
+      })
       .then(() => self.skipWaiting())
   );
 });

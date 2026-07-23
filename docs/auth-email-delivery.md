@@ -26,6 +26,8 @@ Site URL: https://whytab.pages.dev/
 Additional Redirect URL: https://whytab.pages.dev/
 ```
 
+For public registration, keep email confirmation enabled and set the minimum password length to 10 characters. whytab provides password-reset email and signed-in password update controls in the account dialog.
+
 When an owned domain is purchased, configure Resend or another provider with DKIM, SPF, return-path, and DMARC records, then enable Supabase Custom SMTP.
 
 The branded confirmation template is deployed to Supabase Auth and tracked at:

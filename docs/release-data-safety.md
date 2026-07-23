@@ -25,6 +25,10 @@ npm run build
 
 6. Confirm GitHub `main` matches the local NQ790 commit.
 
+7. If the sync protocol changed, apply the Supabase migration before publishing the client and run two-device concurrent-write tests.
+
+8. Confirm private local media is absent from `prepareCloudState()` output and complete export/import round-trips all AppState fields.
+
 ## Data Safety Rules
 
 - Never delete or rewrite local user data during an update without first creating a backup.
@@ -33,3 +37,4 @@ npm run build
 - If a future cloud snapshot has a higher data schema than the current client supports, stop sync and ask the user to upgrade.
 - If a migration changes data shape, add a test fixture that proves shortcuts, folders, todos, notes, countdowns, settings, and sync metadata survive.
 - If new extension permissions are added, treat the release as higher risk because browser stores may require users to accept the permission before updating.
+- Never publish a client that expects a newer cloud sync function before the corresponding database migration is live.

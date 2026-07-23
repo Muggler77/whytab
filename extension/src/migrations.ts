@@ -5,6 +5,7 @@ import { APP_VERSION, DATA_SCHEMA_VERSION } from "./version";
 export const MIGRATION_BACKUP_KEY = "migration-backup";
 
 export type StateBackup = {
+  ownerId?: string;
   label: string;
   savedAt: string;
   appVersion: string;
@@ -22,8 +23,9 @@ export function stateSchemaVersion(state?: Partial<AppState>) {
   return state?.dataSchemaVersion || state?.version || 1;
 }
 
-export function createStateBackup(label: string, state: AppState): StateBackup {
+export function createStateBackup(label: string, state: AppState, ownerId?: string): StateBackup {
   return {
+    ownerId,
     label,
     savedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
@@ -37,7 +39,7 @@ const isAppState = (value: unknown): value is AppState => {
   return Boolean(state && state.version === 1 && state.settings && Array.isArray(state.shortcuts));
 };
 
-export function migrateState(stored: unknown): MigrationResult {
+export function migrateState(stored: unknown, ownerId?: string): MigrationResult {
   if (!isAppState(stored)) {
     return { state: defaultState(), migrated: true };
   }
@@ -55,6 +57,6 @@ export function migrateState(stored: unknown): MigrationResult {
   return {
     state: migratedState,
     migrated,
-    backup: migrated ? createStateBackup("更新前自动备份", stored) : undefined
+    backup: migrated ? createStateBackup("更新前自动备份", stored, ownerId) : undefined
   };
 }

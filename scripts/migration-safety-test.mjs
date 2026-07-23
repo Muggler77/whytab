@@ -37,7 +37,7 @@ try {
   });
 
   const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(migrationsOutput).href);
-  const { normalizeState } = await import(pathToFileURL(syncOutput).href);
+  const { markPulled, mergeRemote, normalizeState, prepareCloudState } = await import(pathToFileURL(syncOutput).href);
   const now = new Date("2026-07-15T00:00:00.000Z").toISOString();
   const legacyState = {
     version: 1,
@@ -73,10 +73,11 @@ try {
   assert.equal(migrated.backup?.state.notes[0].body, "重要数据", "backup must preserve original state");
   assert.equal(stateSchemaVersion(migrated.state), 1, "schema version should remain supported");
 
-  const backup = createStateBackup("测试备份", legacyState);
+  const backup = createStateBackup("测试备份", legacyState, "user-1");
   assert.equal(backup.state.shortcuts[0].url, "https://openai.com", "manual backup must preserve shortcuts");
+  assert.equal(backup.ownerId, "user-1", "migration backups must retain their account owner");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.1" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.2" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -120,6 +121,38 @@ try {
   assert.equal(customNavigation.settings.navigationSide, "right", "custom navigation side must be preserved");
   assert.equal(customNavigation.shortcuts[0].title, "OpenAI", "navigation migration must not alter shortcuts");
   assert.equal(customNavigation.notes[0].body, "重要数据", "navigation migration must not alter notes");
+
+  const localMediaState = normalizeState({
+    ...legacyState,
+    settings: {
+      ...legacyState.settings,
+      photoFrameImage: "data:image/webp;base64,private-photo",
+      wallpaper: "data:image/webp;base64,private-wallpaper",
+      wallpaperPreset: "custom-private",
+      wallpaperCollection: ["aurora-lake", "custom-private"],
+      customWallpapers: [{ id: "custom-private", name: "私人壁纸", dataUrl: "data:image/webp;base64,private-wallpaper", createdAt: now }]
+    }
+  });
+  const cloudState = prepareCloudState(localMediaState);
+  assert.equal(cloudState.settings.photoFrameImage, undefined, "private photos must remain local-only");
+  assert.deepEqual(cloudState.settings.customWallpapers, [], "custom wallpaper payloads must remain local-only");
+  assert.equal(cloudState.settings.wallpaper, undefined, "inline wallpaper data must not be uploaded");
+  assert.deepEqual(cloudState.settings.wallpaperCollection, ["aurora-lake"], "cloud wallpaper collection must exclude local assets");
+  assert.equal(cloudState.settings.supabaseUrl, undefined, "service URLs must not be stored in user snapshots");
+  assert.equal(cloudState.settings.supabaseAnonKey, undefined, "public client configuration must not be stored in user snapshots");
+
+  const mergedWithRemote = mergeRemote(localMediaState, normalizeState({
+    ...legacyState,
+    updatedAt: new Date("2026-07-16T00:00:00.000Z").toISOString(),
+    settings: { ...legacyState.settings, updatedAt: new Date("2026-07-16T00:00:00.000Z").toISOString() },
+    sync: { ...legacyState.sync, remoteRevision: 7 }
+  }));
+  assert.equal(mergedWithRemote.settings.photoFrameImage, localMediaState.settings.photoFrameImage, "remote merges must preserve local photos");
+  assert.equal(mergedWithRemote.settings.customWallpapers?.[0]?.id, "custom-private", "remote merges must preserve local wallpapers");
+  assert.equal(mergedWithRemote.sync.remoteRevision, 7, "remote revision must survive merges");
+
+  const pulled = markPulled(localMediaState, { ...mergedWithRemote, sync: { ...mergedWithRemote.sync, remoteRevision: 9 } });
+  assert.equal(pulled.sync.remoteRevision, 9, "pull metadata must retain the server revision");
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

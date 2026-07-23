@@ -112,6 +112,7 @@ export type Settings = {
   hiddenNavPages?: Array<"shortcuts" | "tools">;
   navigationDisplay?: "always" | "auto" | "hidden";
   navigationSide?: "left" | "right";
+  remoteIconLookup?: boolean;
   timeZone?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
@@ -125,6 +126,7 @@ export type SyncMeta = {
   lastPulledAt?: string;
   lastPushedAt?: string;
   lastRemoteUpdatedAt?: string;
+  remoteRevision?: number;
 };
 
 export type AppState = {

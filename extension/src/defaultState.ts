@@ -83,6 +83,7 @@ export const defaultState = (): AppState => {
       hiddenNavPages: [],
       navigationDisplay: "always",
       navigationSide: "left",
+      remoteIconLookup: true,
       calendarRecords: {},
       widgets: widgetDefaults,
       supabaseUrl: DEFAULT_SUPABASE_URL,

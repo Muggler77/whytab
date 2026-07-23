@@ -1,4 +1,4 @@
-import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
+import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "./projectConfig";
 import { defaultWidgetSizes } from "./defaultState";
 import type { AppState, Countdown, Note, Shortcut, ShortcutFolder, ShortcutGroup, Todo, WidgetKey } from "./types";
@@ -13,32 +13,46 @@ export type SyncStatus = {
   autoSync?: boolean;
 };
 
-let client: SupabaseClient | undefined;
-let clientKey = "";
+let supabaseModulePromise: Promise<typeof import("@supabase/supabase-js")> | undefined;
+const clientPromises = new Map<string, Promise<SupabaseClient>>();
 
-export function getSupabase(url?: string, anonKey?: string) {
+export async function getSupabase(url?: string, anonKey?: string) {
   if (!url || !anonKey) return undefined;
   const key = `${url}::${anonKey}`;
-  if (client && clientKey === key) return client;
-  clientKey = key;
-  client = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true
-    }
-  });
-  return client;
+  const existing = clientPromises.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    supabaseModulePromise ||= import("@supabase/supabase-js");
+    const { createClient } = await supabaseModulePromise;
+    return createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    });
+  })();
+  clientPromises.set(key, pending);
+  return pending;
 }
 
 export async function getUser(url?: string, anonKey?: string) {
-  const supabase = getSupabase(url, anonKey);
+  const supabase = await getSupabase(url, anonKey);
   if (!supabase) return null;
-  const { data } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
   return data.user;
 }
 
+export async function getCachedUser(url?: string, anonKey?: string) {
+  const supabase = await getSupabase(url, anonKey);
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session?.user || null;
+}
+
 export async function signIn(url: string, anonKey: string, email: string, password: string) {
-  const supabase = getSupabase(url, anonKey);
+  const supabase = await getSupabase(url, anonKey);
   if (!supabase) throw new Error("Supabase 配置不完整");
   const result = await supabase.auth.signInWithPassword({ email, password });
   if (result.error) throw result.error;
@@ -46,7 +60,7 @@ export async function signIn(url: string, anonKey: string, email: string, passwo
 }
 
 export async function signUp(url: string, anonKey: string, email: string, password: string, emailRedirectTo?: string) {
-  const supabase = getSupabase(url, anonKey);
+  const supabase = await getSupabase(url, anonKey);
   if (!supabase) throw new Error("Supabase 配置不完整");
   const result = await supabase.auth.signUp({
     email,
@@ -58,44 +72,97 @@ export async function signUp(url: string, anonKey: string, email: string, passwo
 }
 
 export async function signOut(url?: string, anonKey?: string) {
-  const supabase = getSupabase(url, anonKey);
-  if (supabase) await supabase.auth.signOut();
+  const supabase = await getSupabase(url, anonKey);
+  if (supabase) {
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) throw error;
+  }
 }
 
-export async function pushSnapshot(state: AppState) {
-  const supabase = getSupabase(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
-  if (!supabase) throw new Error("Supabase 配置不完整");
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("请先登录");
-
-  const { error } = await supabase.from("sync_snapshots").upsert(
-    {
-      user_id: userData.user.id,
-      name: "primary",
-      payload: normalizeState(state),
-      updated_at: state.updatedAt
-    },
-    { onConflict: "user_id,name" }
-  );
+export async function requestPasswordReset(url: string, anonKey: string, email: string, redirectTo?: string) {
+  const supabase = await getSupabase(url, anonKey);
+  if (!supabase) throw new Error("同步服务暂未配置，请稍后再试");
+  const { error } = await supabase.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined);
   if (error) throw error;
 }
 
-export async function pullSnapshot(state: AppState): Promise<AppState | undefined> {
-  const supabase = getSupabase(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
+export async function updatePassword(url: string, anonKey: string, password: string) {
+  const supabase = await getSupabase(url, anonKey);
+  if (!supabase) throw new Error("同步服务暂未配置，请稍后再试");
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+}
+
+export class SyncConflictError extends Error {
+  constructor() {
+    super("云端数据刚刚发生变化，正在重新合并");
+    this.name = "SyncConflictError";
+  }
+}
+
+const isLocalImage = (value?: string) => Boolean(value?.startsWith("data:") || value?.startsWith("blob:"));
+
+export function prepareCloudState(state: AppState): AppState {
+  const normalized = normalizeState(state);
+  const customIds = new Set((normalized.settings.customWallpapers || []).map((item) => item.id));
+  return {
+    ...normalized,
+    settings: {
+      ...normalized.settings,
+      photoFrameImage: undefined,
+      customWallpapers: [],
+      wallpaper: isLocalImage(normalized.settings.wallpaper) ? undefined : normalized.settings.wallpaper,
+      wallpaperPreset: customIds.has(normalized.settings.wallpaperPreset || "") ? "aurora-lake" : normalized.settings.wallpaperPreset,
+      wallpaperCollection: (normalized.settings.wallpaperCollection || []).filter((id) => !customIds.has(id)),
+      supabaseUrl: undefined,
+      supabaseAnonKey: undefined
+    }
+  };
+}
+
+export async function pushSnapshot(state: AppState): Promise<number> {
+  const supabase = await getSupabase(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
   if (!supabase) throw new Error("Supabase 配置不完整");
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!userData.user) throw new Error("请先登录");
+
+  const { data, error } = await supabase.rpc("push_sync_snapshot", {
+    p_name: "primary",
+    p_payload: prepareCloudState(state),
+    p_expected_revision: state.sync?.remoteRevision || 0
+  });
+  if (error) throw error;
+  const result = (Array.isArray(data) ? data[0] : data) as { applied?: boolean; next_revision?: number } | null;
+  if (!result?.applied) throw new SyncConflictError();
+  return Number(result.next_revision || 1);
+}
+
+export async function pullSnapshot(state: AppState): Promise<AppState | undefined> {
+  const supabase = await getSupabase(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
+  if (!supabase) throw new Error("Supabase 配置不完整");
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
   if (!userData.user) throw new Error("请先登录");
 
   const { data, error } = await supabase
     .from("sync_snapshots")
-    .select("payload, updated_at")
+    .select("payload, updated_at, revision")
     .eq("user_id", userData.user.id)
     .eq("name", "primary")
     .maybeSingle();
   if (error) throw error;
   const payload = data?.payload as AppState | undefined;
-  if (payload) ensureRemoteCompatible(payload);
-  return payload;
+  if (!payload) return undefined;
+  ensureRemoteCompatible(payload);
+  return {
+    ...payload,
+    sync: {
+      ...payload.sync,
+      remoteRevision: Number(data?.revision || 0),
+      lastRemoteUpdatedAt: data?.updated_at || payload.sync?.lastRemoteUpdatedAt
+    }
+  };
 }
 
 type SyncRecord = {
@@ -248,6 +315,7 @@ export function normalizeState(state: AppState): AppState {
         ? state.settings.navigationDisplay
         : "always",
       navigationSide: state.settings.navigationSide === "right" ? "right" : "left",
+      remoteIconLookup: state.settings.remoteIconLookup ?? true,
       timeZone: state.settings.timeZone || "Asia/Shanghai",
       dateTimeColor: state.settings.dateTimeColor || "#ffffff",
       widgetAccentColor: state.settings.widgetAccentColor || "#2dd4bf",
@@ -264,7 +332,8 @@ export function normalizeState(state: AppState): AppState {
       intervalSeconds: Math.max(30, state.sync?.intervalSeconds || 60),
       lastPulledAt: state.sync?.lastPulledAt,
       lastPushedAt: state.sync?.lastPushedAt,
-      lastRemoteUpdatedAt: state.sync?.lastRemoteUpdatedAt
+      lastRemoteUpdatedAt: state.sync?.lastRemoteUpdatedAt,
+      remoteRevision: Math.max(0, state.sync?.remoteRevision || 0)
     }
   };
 }
@@ -289,13 +358,24 @@ export function mergeRemote(local: AppState, remote?: AppState): AppState {
     countdowns: mergeRecords<Countdown>(normalizedLocal.countdowns, normalizedRemote.countdowns),
     settings: {
       ...settings,
+      photoFrameImage: normalizedLocal.settings.photoFrameImage,
+      customWallpapers: normalizedLocal.settings.customWallpapers || [],
+      wallpaper: isLocalImage(normalizedLocal.settings.wallpaper) ? normalizedLocal.settings.wallpaper : settings.wallpaper,
+      wallpaperPreset: (normalizedLocal.settings.customWallpapers || []).some((item) => item.id === normalizedLocal.settings.wallpaperPreset)
+        ? normalizedLocal.settings.wallpaperPreset
+        : settings.wallpaperPreset,
+      wallpaperCollection: Array.from(new Set([
+        ...(settings.wallpaperCollection || []),
+        ...(normalizedLocal.settings.customWallpapers || []).map((item) => item.id)
+      ])),
       supabaseUrl: normalizedLocal.settings.supabaseUrl || normalizedRemote.settings.supabaseUrl,
       supabaseAnonKey: normalizedLocal.settings.supabaseAnonKey || normalizedRemote.settings.supabaseAnonKey
     },
     sync: {
       ...normalizedLocal.sync,
       lastPulledAt: new Date().toISOString(),
-      lastRemoteUpdatedAt: normalizedRemote.updatedAt
+      lastRemoteUpdatedAt: normalizedRemote.updatedAt,
+      remoteRevision: normalizedRemote.sync?.remoteRevision || normalizedLocal.sync?.remoteRevision || 0
     },
     updatedAt: new Date(Math.max(time(normalizedLocal.updatedAt), time(normalizedRemote.updatedAt))).toISOString()
   };
@@ -309,19 +389,36 @@ export function markPulled(state: AppState, remote?: AppState): AppState {
     sync: {
       ...normalized.sync,
       lastPulledAt: new Date().toISOString(),
-      lastRemoteUpdatedAt: remote?.updatedAt || normalized.sync.lastRemoteUpdatedAt
+      lastRemoteUpdatedAt: remote?.updatedAt || normalized.sync.lastRemoteUpdatedAt,
+      remoteRevision: remote?.sync?.remoteRevision ?? normalized.sync.remoteRevision
     }
   };
 }
 
-export function markPushed(state: AppState): AppState {
+export function markPushed(state: AppState, remoteRevision = state.sync?.remoteRevision || 0): AppState {
   const normalized = normalizeState(state);
   return {
     ...normalized,
     sync: {
       ...normalized.sync,
       lastPushedAt: new Date().toISOString(),
-      lastRemoteUpdatedAt: normalized.updatedAt
+      lastRemoteUpdatedAt: normalized.updatedAt,
+      remoteRevision
     }
   };
+}
+
+export async function synchronizeSnapshot(state: AppState, attempts = 3): Promise<AppState> {
+  let candidate = state;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const remote = await pullSnapshot(candidate);
+    candidate = mergeRemote(candidate, remote);
+    try {
+      const revision = await pushSnapshot(candidate);
+      return markPushed(candidate, revision);
+    } catch (error) {
+      if (!(error instanceof SyncConflictError) || attempt === attempts - 1) throw error;
+    }
+  }
+  throw new Error("同步重试次数已用尽");
 }

@@ -11,6 +11,8 @@ const accountStateKey = (userId?: string) => userId ? `app-state:user:${userId}`
 const RATES_KEY = "rates-cache";
 const WEATHER_KEY = "weather-cache";
 
+export const accountScopedKey = (base: string, userId?: string) => `${base}:${userId ? `user:${userId}` : "anonymous"}`;
+
 let dbPromise: Promise<IDBDatabase> | undefined;
 
 const openDb = () => {
@@ -47,9 +49,9 @@ export async function writeKey<T>(key: string, value: T): Promise<void> {
   });
 }
 
-async function migrateStoredState(stored: AppState | undefined, save: (state: AppState) => Promise<void>): Promise<AppState> {
-  const migration = migrateState(stored);
-  if (migration.backup) await writeKey(MIGRATION_BACKUP_KEY, migration.backup);
+async function migrateStoredState(stored: AppState | undefined, save: (state: AppState) => Promise<void>, userId?: string): Promise<AppState> {
+  const migration = migrateState(stored, userId);
+  if (migration.backup) await writeKey(accountScopedKey(MIGRATION_BACKUP_KEY, userId), migration.backup);
   if (stored && migration.migrated) await save(migration.state);
   if (stored?.version === 1) return migration.state;
   const initial = defaultState();
@@ -69,7 +71,7 @@ export async function saveState(state: AppState): Promise<void> {
 export async function loadStateForAccount(userId?: string): Promise<{ state: AppState; existed: boolean }> {
   const key = accountStateKey(userId);
   const stored = await readKey<AppState>(key);
-  const state = await migrateStoredState(stored, (next) => saveStateForAccount(next, userId));
+  const state = await migrateStoredState(stored, (next) => saveStateForAccount(next, userId), userId);
   return { state, existed: Boolean(stored) };
 }
 

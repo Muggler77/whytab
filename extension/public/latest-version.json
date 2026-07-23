@@ -1,6 +1,6 @@
 {
-  "latestVersion": "0.5.1",
-  "minimumSupportedVersion": "0.1.0",
+  "latestVersion": "0.5.2",
+  "minimumSupportedVersion": "0.5.2",
   "dataSchemaVersion": 1,
   "severity": "normal",
   "releaseNotesUrl": "https://github.com/Muggler77/whytab/releases",
