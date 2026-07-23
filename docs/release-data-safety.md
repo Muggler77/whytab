@@ -21,7 +21,7 @@ npm run build
 
 4. Verify `extension/dist/latest-version.json` exists and matches the intended published version.
 
-5. Confirm `$HOME/whytab-extension-dist` has been synced from `extension/dist`.
+5. Confirm the local unpacked-extension directory has been synced from `extension/dist`.
 
 6. Confirm GitHub `main` matches the local NQ790 commit.
 
@@ -33,6 +33,10 @@ npm run build
 
 10. Run `npm run build:web` separately and confirm only `extension/web-dist` contains `_headers`.
 
+11. Confirm the Cloudflare Pages deployment job fails when either required Secret is absent and completes its actual deploy step when both are present.
+
+12. Confirm stale login or sync operations cannot update state after logout or account switching.
+
 ## Data Safety Rules
 
 - Never delete or rewrite local user data during an update without first creating a backup.
@@ -42,3 +46,5 @@ npm run build
 - If a migration changes data shape, add a test fixture that proves shortcuts, folders, todos, notes, countdowns, settings, and sync metadata survive.
 - If new extension permissions are added, treat the release as higher risk because browser stores may require users to accept the permission before updating.
 - Never publish a client that expects a newer cloud sync function before the corresponding database migration is live.
+- Keep local uploaded media out of cloud snapshots and preserve it during pull or merge operations.
+- Enforce the cloud snapshot payload boundary in both the client and database function.

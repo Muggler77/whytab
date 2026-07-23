@@ -26,6 +26,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Verify deployment credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
       - name: Install dependencies
         run: npm ci
       - name: Build
@@ -35,7 +39,6 @@ jobs:
           VITE_AUTH_REDIRECT_URL: https://whytab.pages.dev/
         run: npm run build:web
       - name: Deploy to Cloudflare Pages
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}

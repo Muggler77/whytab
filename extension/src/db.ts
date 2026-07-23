@@ -24,7 +24,10 @@ const openDb = () => {
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      dbPromise = undefined;
+      reject(request.error);
+    };
   });
   return dbPromise;
 };
@@ -46,6 +49,7 @@ export async function writeKey<T>(key: string, value: T): Promise<void> {
     tx.objectStore(STORE).put(value, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
   });
 }
 

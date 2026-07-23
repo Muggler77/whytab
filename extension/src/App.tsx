@@ -105,6 +105,8 @@ const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ICON_LOAD_TIMEOUT_MS = 3600;
 const MIN_SHARP_ICON_SIZE = 32;
 const MAX_CUSTOM_WALLPAPERS = 12;
+const MAX_IMAGE_UPLOAD_BYTES = 12 * 1024 * 1024;
+const MAX_IMAGE_DATA_URL_LENGTH = 3 * 1024 * 1024;
 const RESOLVED_ICON_CACHE_KEY = "whytab:resolved-icons:v1";
 const MAX_RESOLVED_ICON_CACHE_ENTRIES = 300;
 let remoteIconLookupEnabled = true;
@@ -627,7 +629,9 @@ export default function App() {
   const [useCompactAssets, setUseCompactAssets] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   const stateRef = useRef(state);
   const activeUserIdRef = useRef<string | undefined>();
+  const accountEpochRef = useRef(0);
   const syncLockRef = useRef(false);
+  const persistenceErrorShownRef = useRef(false);
   const undoSnapshotRef = useRef<AppState | undefined>();
   const lastSyncedUpdatedAtRef = useRef<string | undefined>();
   const wheelPageLockRef = useRef(0);
@@ -684,14 +688,19 @@ export default function App() {
     stateRef.current = next;
   };
 
+  const isCurrentAccountOperation = (epoch: number, userId?: string) => (
+    accountEpochRef.current === epoch && activeUserIdRef.current === userId
+  );
+
   const syncRestoreKey = (userId = activeUserIdRef.current) => accountScopedKey(SYNC_RESTORE_KEY, userId);
   const migrationBackupKey = (userId = activeUserIdRef.current) => accountScopedKey(MIGRATION_BACKUP_KEY, userId);
 
-  const refreshBackupAvailability = async (userId = activeUserIdRef.current) => {
+  const refreshBackupAvailability = async (userId = activeUserIdRef.current, expectedEpoch?: number) => {
     const [syncBackup, migrationBackup] = await Promise.all([
       readKey(syncRestoreKey(userId)),
       readKey(migrationBackupKey(userId))
     ]);
+    if (expectedEpoch !== undefined && accountEpochRef.current !== expectedEpoch) return;
     setRestoreAvailable(Boolean(syncBackup));
     setMigrationBackupAvailable(Boolean(migrationBackup));
   };
@@ -710,6 +719,7 @@ export default function App() {
     settings: {
       ...next.settings,
       photoFrameImage: source.settings.photoFrameImage,
+      photoFrameTitle: source.settings.photoFrameTitle,
       customWallpapers: source.settings.customWallpapers || [],
       wallpaper: source.settings.wallpaper?.startsWith("data:") ? source.settings.wallpaper : next.settings.wallpaper,
       wallpaperPreset: (source.settings.customWallpapers || []).some((item) => item.id === source.settings.wallpaperPreset)
@@ -748,6 +758,8 @@ export default function App() {
   });
 
   const activateSignedInUser = async (user: NonNullable<SyncStatus["user"]>, reason = "正在加载账号数据") => {
+    const operationEpoch = accountEpochRef.current + 1;
+    accountEpochRef.current = operationEpoch;
     const previousUserId = activeUserIdRef.current;
     const wasAnonymousSession = !previousUserId;
     const anonymousState = wasAnonymousSession ? portableAnonymousState(normalizeState(withCurrentServiceConfig(stateRef.current))) : undefined;
@@ -756,15 +768,18 @@ export default function App() {
 
     try {
       const local = await loadStateForAccount(user.id);
+      if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
       let next = normalizeState(withCurrentServiceConfig(local.state));
       if (anonymousState && shouldCarryAnonymousData) next = mergeRemote(next, anonymousState);
       const remote = await pullSnapshot(next);
+      if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
 
       if (remote) {
         const normalizedRemote = normalizeState(remote);
         if (local.existed || shouldCarryAnonymousData) {
           next = mergeRemote(next, normalizedRemote);
           next = await synchronizeSnapshot(next);
+          if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
         } else {
           next = markPulled(withCurrentServiceConfig({
             ...normalizedRemote,
@@ -776,13 +791,16 @@ export default function App() {
         }
       } else {
         next = await synchronizeSnapshot(next);
+        if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
       }
 
+      await saveStateForAccount(next, user.id);
+      if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
+      await refreshBackupAvailability(user.id, operationEpoch);
+      if (accountEpochRef.current !== operationEpoch) throw new Error("账号操作已取消");
       activeUserIdRef.current = user.id;
       lastSyncedUpdatedAtRef.current = next.updatedAt;
       applyState(next);
-      await saveStateForAccount(next, user.id);
-      await refreshBackupAvailability(user.id);
       setSync({
         user,
         syncing: false,
@@ -793,12 +811,14 @@ export default function App() {
       if (shouldCarryAnonymousData) showToast("已把未登录时的本机数据合并到当前账号");
       return next;
     } catch (error) {
-      activeUserIdRef.current = previousUserId;
-      setSync((old) => ({
-        ...old,
-        syncing: false,
-        message: error instanceof Error ? `账号数据加载失败：${error.message}` : "账号数据加载失败"
-      }));
+      if (accountEpochRef.current === operationEpoch) {
+        activeUserIdRef.current = previousUserId;
+        setSync((old) => ({
+          ...old,
+          syncing: false,
+          message: error instanceof Error ? `账号数据加载失败：${error.message}` : "账号数据加载失败"
+        }));
+      }
       throw error;
     }
   };
@@ -835,7 +855,15 @@ export default function App() {
 
   useEffect(() => {
     if (!ready) return;
-    saveStateForAccount(state, activeUserIdRef.current);
+    void saveStateForAccount(state, activeUserIdRef.current)
+      .then(() => {
+        persistenceErrorShownRef.current = false;
+      })
+      .catch(() => {
+        if (persistenceErrorShownRef.current) return;
+        persistenceErrorShownRef.current = true;
+        setToast("本机存储写入失败，最新修改尚未安全保存");
+      });
     if (!state.sync?.autoSync || !state.settings.supabaseUrl || !state.settings.supabaseAnonKey) return;
     if (state.updatedAt === lastSyncedUpdatedAtRef.current) return;
     const timer = window.setTimeout(() => {
@@ -869,7 +897,11 @@ export default function App() {
   }, []);
 
   const updateState = (updater: (state: AppState) => AppState) => {
-    setState((current) => ({ ...updater(current), updatedAt: nowIso() }));
+    setState((current) => {
+      const next = { ...updater(current), updatedAt: nowIso() };
+      stateRef.current = next;
+      return next;
+    });
   };
 
   const rememberUndo = (label: string) => {
@@ -992,10 +1024,6 @@ export default function App() {
     setNavigationOpen(false);
   }, [navigationDisplay, navigationSide]);
 
-  useEffect(() => {
-    setNavigationOpen(false);
-  }, [navigationDisplay, navigationSide]);
-
   const allShortcuts = useMemo(() => {
     return state.shortcuts.filter((shortcut) => !shortcut.deletedAt).sort((a, b) => a.order - b.order);
   }, [state.shortcuts]);
@@ -1113,20 +1141,30 @@ export default function App() {
   const performAutoSync = useCallback(async (reason: string) => {
     const current = stateRef.current;
     if (!current.settings.supabaseUrl || !current.settings.supabaseAnonKey || !current.sync?.autoSync) return;
+    const expectedUserId = activeUserIdRef.current;
+    if (!expectedUserId) return;
+    const operationEpoch = accountEpochRef.current;
     if (syncLockRef.current) return;
     syncLockRef.current = true;
     setSync((old) => ({ ...old, syncing: true, message: reason }));
     try {
       const user = await getUser(current.settings.supabaseUrl, current.settings.supabaseAnonKey);
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) return;
       if (!user) {
         setSync((old) => ({ ...old, user: null, syncing: false, message: "未登录，自动同步暂停" }));
         return;
       }
+      if (user.id !== expectedUserId) {
+        setSync((old) => ({ ...old, syncing: false, message: "账号状态已变化，自动同步暂停" }));
+        return;
+      }
 
       const pushed = await synchronizeSnapshot(current);
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) return;
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
+      await saveStateForAccount(pushed, expectedUserId);
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) return;
       applyState(pushed);
-      await saveStateForAccount(pushed, user.id);
       setSync({
         user,
         syncing: false,
@@ -1135,6 +1173,7 @@ export default function App() {
         lastSyncedAt: pushed.sync?.lastPushedAt || nowIso()
       });
     } catch (error) {
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) return;
       setSync((old) => ({
         ...old,
         syncing: false,
@@ -1715,22 +1754,39 @@ export default function App() {
   };
 
   const doSync = async (mode: SyncMode) => {
+    const expectedUserId = activeUserIdRef.current;
+    if (!expectedUserId) {
+      setSync((old) => ({ ...old, syncing: false, message: "请先登录再同步" }));
+      return;
+    }
+    const operationEpoch = accountEpochRef.current;
+    const ensureCurrentAccount = () => {
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) throw new Error("账号已变化，本次同步已取消");
+    };
+    if (syncLockRef.current) {
+      setSync((old) => ({ ...old, message: "已有同步任务正在进行，请稍候" }));
+      return;
+    }
+    syncLockRef.current = true;
     const message = mode === "merge" ? "正在合并多端数据..." : mode === "push" ? "正在用本机覆盖云端..." : "正在用云端覆盖本机...";
     setSync((old) => ({ ...old, syncing: true, message }));
     try {
       await saveSyncRestorePoint(mode === "merge" ? "合并同步前" : mode === "push" ? "上传覆盖前" : "拉取覆盖前");
+      ensureCurrentAccount();
       const current = stateRef.current;
       if (mode === "push") {
         let candidate = current;
         let pushed: AppState | undefined;
         for (let attempt = 0; attempt < 3 && !pushed; attempt += 1) {
           const latestRemote = await pullSnapshot(candidate);
+          ensureCurrentAccount();
           candidate = {
             ...candidate,
             sync: { ...candidate.sync, remoteRevision: latestRemote?.sync?.remoteRevision || 0 }
           };
           try {
             const revision = await pushSnapshot(candidate);
+            ensureCurrentAccount();
             pushed = markPushed(candidate, revision);
           } catch (error) {
             if (attempt === 2) throw error;
@@ -1738,13 +1794,15 @@ export default function App() {
         }
         if (!pushed) throw new Error("云端覆盖失败，请重试");
         lastSyncedUpdatedAtRef.current = pushed.updatedAt;
+        await saveStateForAccount(pushed, expectedUserId);
+        ensureCurrentAccount();
         applyState(pushed);
-        await saveStateForAccount(pushed, activeUserIdRef.current);
         setSync((old) => ({ ...old, syncing: false, message: "已用本机版本覆盖云端", lastSyncedAt: pushed.sync?.lastPushedAt || nowIso() }));
         return;
       }
 
       const remote = await pullSnapshot(current);
+      ensureCurrentAccount();
       if (!remote) {
         setSync((old) => ({ ...old, syncing: false, message: "云端暂无数据" }));
         return;
@@ -1765,19 +1823,25 @@ export default function App() {
           }
         }, current), normalizedRemote);
         lastSyncedUpdatedAtRef.current = pulled.updatedAt;
+        await saveStateForAccount(pulled, expectedUserId);
+        ensureCurrentAccount();
         applyState(pulled);
-        await saveStateForAccount(pulled, activeUserIdRef.current);
         setSync((old) => ({ ...old, syncing: false, message: "已用云端版本覆盖本机", lastSyncedAt: pulled.sync?.lastPulledAt || nowIso() }));
         return;
       }
 
       const pushed = await synchronizeSnapshot(mergeRemote(current, remote));
+      ensureCurrentAccount();
       lastSyncedUpdatedAtRef.current = pushed.updatedAt;
+      await saveStateForAccount(pushed, expectedUserId);
+      ensureCurrentAccount();
       applyState(pushed);
-      await saveStateForAccount(pushed, activeUserIdRef.current);
       setSync((old) => ({ ...old, syncing: false, message: "已合并本机与云端，并同步到云端", lastSyncedAt: pushed.sync?.lastPushedAt || nowIso() }));
     } catch (error) {
+      if (!isCurrentAccountOperation(operationEpoch, expectedUserId)) return;
       setSync((old) => ({ ...old, syncing: false, message: error instanceof Error ? error.message : "同步失败" }));
+    } finally {
+      syncLockRef.current = false;
     }
   };
 
@@ -2339,8 +2403,11 @@ export default function App() {
             return { status: "signed-in", message: "注册成功，已加载此账号的数据。" };
           }}
           onSignOut={async () => {
-            await saveStateForAccount(stateRef.current, activeUserIdRef.current);
-            await signOut(state.settings.supabaseUrl, state.settings.supabaseAnonKey);
+            accountEpochRef.current += 1;
+            const signingOutUserId = activeUserIdRef.current;
+            const current = stateRef.current;
+            await saveStateForAccount(current, signingOutUserId);
+            await signOut(current.settings.supabaseUrl, current.settings.supabaseAnonKey);
             activeUserIdRef.current = undefined;
             const blank = normalizeState(defaultState());
             applyState(blank);
@@ -3242,16 +3309,20 @@ function PhotoWidget({ widgetKey, size, state, updateState }: { widgetKey: Widge
   const title = state.settings.photoFrameTitle || "我的照片";
   const savePhoto = async (file?: File) => {
     if (!file) return;
-    const dataUrl = await shrinkImage(file);
-    updateState((current) => ({
-      ...current,
-      settings: {
-        ...current.settings,
-        photoFrameImage: dataUrl,
-        photoFrameTitle: file.name.replace(/\.[^.]+$/, "") || "我的照片",
-        updatedAt: nowIso()
-      }
-    }));
+    try {
+      const dataUrl = await shrinkImage(file);
+      updateState((current) => ({
+        ...current,
+        settings: {
+          ...current.settings,
+          photoFrameImage: dataUrl,
+          photoFrameTitle: file.name.replace(/\.[^.]+$/, "") || "我的照片",
+          updatedAt: nowIso()
+        }
+      }));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "照片处理失败");
+    }
   };
   const clearPhoto = () => {
     updateState((current) => ({
@@ -3501,6 +3572,14 @@ function CalculatorWidget({ widgetKey, size }: { widgetKey: WidgetKey; size: Wid
 
 function shrinkImage(file: File, maxSide = 1600, quality = 0.86): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("请选择有效的图片文件"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      reject(new Error("单张图片不能超过 12 MB"));
+      return;
+    }
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("照片读取失败"));
     reader.onload = () => {
@@ -3513,11 +3592,21 @@ function shrinkImage(file: File, maxSide = 1600, quality = 0.86): Promise<string
         canvas.height = Math.max(1, Math.round(img.height * scale));
         const context = canvas.getContext("2d");
         if (!context) {
-          resolve(String(reader.result || ""));
+          const fallback = String(reader.result || "");
+          if (fallback.length > MAX_IMAGE_DATA_URL_LENGTH) {
+            reject(new Error("压缩后的图片仍然过大，请选择尺寸更小的图片"));
+            return;
+          }
+          resolve(fallback);
           return;
         }
         context.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+          reject(new Error("压缩后的图片仍然过大，请选择尺寸更小的图片"));
+          return;
+        }
+        resolve(dataUrl);
       };
       img.src = String(reader.result || "");
     };
@@ -3660,8 +3749,12 @@ function FolderDialog({ folder, groups, onClose, onSave, onDelete }: {
           onChange={async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
-            const dataUrl = await shrinkImage(file, 384, 0.84);
-            setDraft({ ...draft, iconUrl: dataUrl });
+            try {
+              const dataUrl = await shrinkImage(file, 384, 0.84);
+              setDraft({ ...draft, iconUrl: dataUrl });
+            } catch (error) {
+              window.alert(error instanceof Error ? error.message : "图片处理失败");
+            }
           }}
         />
       </label>
@@ -3902,12 +3995,18 @@ function ResourceCenterDialog({ state, shortcuts, updateState, onEditShortcut, o
       window.alert(`最多保存 ${MAX_CUSTOM_WALLPAPERS} 张自定义壁纸，请先删除旧壁纸。`);
       return;
     }
-    const additions = await Promise.all(Array.from(files).slice(0, remaining).map(async (file) => ({
-      id: `custom-${uid()}`,
-      name: file.name.replace(/\.[^.]+$/, "") || "我的壁纸",
-      dataUrl: await shrinkImage(file, 1600, 0.82),
-      createdAt: nowIso()
-    })));
+    let additions: NonNullable<AppState["settings"]["customWallpapers"]>;
+    try {
+      additions = await Promise.all(Array.from(files).slice(0, remaining).map(async (file) => ({
+        id: `custom-${uid()}`,
+        name: file.name.replace(/\.[^.]+$/, "") || "我的壁纸",
+        dataUrl: await shrinkImage(file, 1600, 0.82),
+        createdAt: nowIso()
+      })));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "壁纸处理失败");
+      return;
+    }
     updateState((current) => ({
       ...current,
       settings: {

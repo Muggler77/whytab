@@ -101,15 +101,23 @@ export class SyncConflictError extends Error {
 }
 
 const isLocalImage = (value?: string) => Boolean(value?.startsWith("data:") || value?.startsWith("blob:"));
+const MAX_CLOUD_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 
 export function prepareCloudState(state: AppState): AppState {
   const normalized = normalizeState(state);
   const customIds = new Set((normalized.settings.customWallpapers || []).map((item) => item.id));
   return {
     ...normalized,
+    shortcuts: normalized.shortcuts.map((shortcut) => (
+      isLocalImage(shortcut.iconUrl) ? { ...shortcut, iconUrl: undefined } : shortcut
+    )),
+    shortcutFolders: normalized.shortcutFolders.map((folder) => (
+      isLocalImage(folder.iconUrl) ? { ...folder, iconUrl: undefined } : folder
+    )),
     settings: {
       ...normalized.settings,
       photoFrameImage: undefined,
+      photoFrameTitle: undefined,
       customWallpapers: [],
       wallpaper: isLocalImage(normalized.settings.wallpaper) ? undefined : normalized.settings.wallpaper,
       wallpaperPreset: customIds.has(normalized.settings.wallpaperPreset || "") ? "aurora-lake" : normalized.settings.wallpaperPreset,
@@ -127,9 +135,15 @@ export async function pushSnapshot(state: AppState): Promise<number> {
   if (userError) throw userError;
   if (!userData.user) throw new Error("请先登录");
 
+  const payload = prepareCloudState(state);
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+  if (payloadBytes > MAX_CLOUD_SNAPSHOT_BYTES) {
+    throw new Error("同步数据超过 2 MB，请删除部分较大的文字内容后重试");
+  }
+
   const { data, error } = await supabase.rpc("push_sync_snapshot", {
     p_name: "primary",
-    p_payload: prepareCloudState(state),
+    p_payload: payload,
     p_expected_revision: state.sync?.remoteRevision || 0
   });
   if (error) throw error;
@@ -268,6 +282,18 @@ const mergeNotes = (local: Note[], remote: Note[]) => {
   return [...map.values()].sort((a, b) => time(b.updatedAt) - time(a.updatedAt));
 };
 
+const preserveLocalIcons = <T extends { id: string; iconUrl?: string }>(merged: T[], local: T[]) => {
+  const localIcons = new Map(
+    local
+      .filter((record) => isLocalImage(record.iconUrl))
+      .map((record) => [record.id, record.iconUrl] as const)
+  );
+  return merged.map((record) => {
+    const iconUrl = localIcons.get(record.id);
+    return iconUrl ? { ...record, iconUrl } : record;
+  });
+};
+
 export function normalizeState(state: AppState): AppState {
   const updatedAt = state.updatedAt || new Date().toISOString();
   const visualVersion = state.settings.visualRefreshVersion || 0;
@@ -345,20 +371,29 @@ export function mergeRemote(local: AppState, remote?: AppState): AppState {
   ensureRemoteCompatible(remote);
   const normalizedRemote = normalizeState(remote);
   const settings = newer(normalizedLocal.settings, normalizedRemote.settings);
+  const mergedFolders = preserveLocalIcons(
+    mergeRecords<ShortcutFolder>(normalizedLocal.shortcutFolders, normalizedRemote.shortcutFolders),
+    normalizedLocal.shortcutFolders
+  );
+  const mergedShortcuts = preserveLocalIcons(
+    mergeRecords<Shortcut>(normalizedLocal.shortcuts, normalizedRemote.shortcuts),
+    normalizedLocal.shortcuts
+  );
   const merged: AppState = {
     version: 1,
     dataSchemaVersion: DATA_SCHEMA_VERSION,
     clientVersion: APP_VERSION,
     minimumClientVersion: MIN_SUPPORTED_APP_VERSION,
     shortcutGroups: mergeRecords<ShortcutGroup>(normalizedLocal.shortcutGroups, normalizedRemote.shortcutGroups),
-    shortcutFolders: mergeRecords<ShortcutFolder>(normalizedLocal.shortcutFolders, normalizedRemote.shortcutFolders),
-    shortcuts: mergeRecords<Shortcut>(normalizedLocal.shortcuts, normalizedRemote.shortcuts),
+    shortcutFolders: mergedFolders,
+    shortcuts: mergedShortcuts,
     todos: mergeRecords<Todo>(normalizedLocal.todos, normalizedRemote.todos),
     notes: mergeNotes(normalizedLocal.notes, normalizedRemote.notes),
     countdowns: mergeRecords<Countdown>(normalizedLocal.countdowns, normalizedRemote.countdowns),
     settings: {
       ...settings,
       photoFrameImage: normalizedLocal.settings.photoFrameImage,
+      photoFrameTitle: normalizedLocal.settings.photoFrameTitle,
       customWallpapers: normalizedLocal.settings.customWallpapers || [],
       wallpaper: isLocalImage(normalizedLocal.settings.wallpaper) ? normalizedLocal.settings.wallpaper : settings.wallpaper,
       wallpaperPreset: (normalizedLocal.settings.customWallpapers || []).some((item) => item.id === normalizedLocal.settings.wallpaperPreset)

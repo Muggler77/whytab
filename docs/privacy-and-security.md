@@ -14,6 +14,8 @@ Without login, user data is stored in the current browser profile through Indexe
 - Countdowns
 - Theme and appearance settings
 - Private photo-frame images and custom wallpaper image data
+- Uploaded shortcut and folder icon image data
+- Local photo filenames
 - Local sync metadata
 
 This data is not sent to the sync backend unless the user signs in.
@@ -32,9 +34,9 @@ Cloud sync includes:
 - Countdowns
 - Settings
 
-Private photo-frame images, inline wallpaper data, and uploaded custom wallpapers are deliberately removed from cloud snapshots. They remain on the device and can be moved through a user-created complete backup.
+Private photo-frame images and filenames, inline wallpaper data, uploaded custom wallpapers, and uploaded shortcut or folder icons are deliberately removed from cloud snapshots. They remain on the device and can be moved through a user-created complete backup.
 
-Cloud snapshots are protected by Auth, RLS, account-scoped restore points, and optimistic concurrency. They are not end-to-end encrypted, so the hosted database operator can technically access synchronized cloud fields. Do not place passwords or highly sensitive secrets in notes or shortcut titles.
+Cloud snapshots are protected by Auth, RLS, account-scoped restore points, optimistic concurrency, a fixed `primary` snapshot name, and a 2 MB server-side payload boundary. Legacy direct table access is revoked for public clients; writes go through one authenticated atomic RPC. Cloud fields are not end-to-end encrypted, so the hosted database operator can technically access synchronized content. Do not place passwords or highly sensitive secrets in notes or shortcut titles.
 
 ## Website Icons
 
@@ -87,7 +89,11 @@ Never commit:
 - Complete local JSON export and restore for user-controlled backups
 - Account-scoped restore points and migration backups
 - Server-revision conflict detection for multi-device writes
+- Account-operation cancellation guards during login, logout, and sync
+- Client and server 2 MB cloud snapshot limits
+- Read-only snapshot table access with authenticated atomic writes
 - Device-local handling for private photos and custom wallpaper data
+- Bounded external icon caches and explicit local persistence errors
 - CSP, HSTS, frame blocking, and browser permission policy on the hosted app
 - No tracked personal migration data
 

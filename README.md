@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.3**. See the [bilingual release notes](docs/releases/0.5.3.md).
+Current release: **0.5.4**. See the [bilingual release notes](docs/releases/0.5.4.md).
 
 ## Product and Framework
 
@@ -48,7 +48,7 @@ The web app does not replace the browser's new tab page, but it provides the sam
 
 Cloudflare Pages deployment uses the root `wrangler.toml` and publishes `extension/web-dist`. The Chrome/Edge package is built separately in `extension/dist`, so Cloudflare-only files such as `_headers` can never make the browser extension invalid. The shared `pages.dev` hostname is free and can later be replaced by an owned custom domain without changing the Supabase project or synchronized user data.
 
-Automatic Pages deployment expects repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be restricted to Cloudflare Pages edit access for the whytab account. When these secrets are absent, CI still builds and verifies the web app but skips deployment.
+Automatic Pages deployment requires repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token must be restricted to Cloudflare Pages edit access for the whytab account. A missing secret now fails the deployment job instead of reporting a misleading successful run.
 
 ### Install as a Chrome or Edge new tab extension
 
@@ -100,6 +100,15 @@ https://whytab.pages.dev/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.4 账号与同步安全加固
+
+- 登录、退出、自动同步和手动同步增加账号操作代次校验，旧任务不能在账号切换后覆盖当前界面或本机数据。
+- 本机上传的快捷图标、文件夹图标、照片、照片文件名和自定义壁纸不会进入云端快照；跨设备合并不会清除当前设备的本机媒体。
+- 客户端和数据库同时限制云端快照为 2 MB；图片上传增加格式、原始体积和压缩结果校验。
+- 旧细粒度同步表关闭客户端直接访问，快照只允许读取，并通过受限 RPC 原子写入。
+- 外部网站图标缓存限制为 200 项，本机存储失败会明确提醒。
+- Cloudflare Pages 缺少部署 Secrets 时工作流直接失败，避免把未部署误报为成功。
 
 ### 0.5.3 扩展发布修复
 

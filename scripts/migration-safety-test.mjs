@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ const repoRoot = new URL("..", import.meta.url).pathname;
 const tempDir = await mkdtemp(join(tmpdir(), "whytab-migration-test-"));
 const migrationsOutput = join(tempDir, "migrations.mjs");
 const syncOutput = join(tempDir, "sync.mjs");
+const dbOutput = join(tempDir, "db.mjs");
 
 globalThis.window = { crypto: globalThis.crypto };
 
@@ -35,9 +36,21 @@ try {
     },
     logLevel: "silent"
   });
+  await build({
+    entryPoints: [join(repoRoot, "extension/src/db.ts")],
+    outfile: dbOutput,
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    define: {
+      "import.meta.env": "{}"
+    },
+    logLevel: "silent"
+  });
 
   const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(migrationsOutput).href);
   const { markPulled, mergeRemote, normalizeState, prepareCloudState } = await import(pathToFileURL(syncOutput).href);
+  const { accountScopedKey } = await import(pathToFileURL(dbOutput).href);
   const now = new Date("2026-07-15T00:00:00.000Z").toISOString();
   const legacyState = {
     version: 1,
@@ -76,8 +89,10 @@ try {
   const backup = createStateBackup("测试备份", legacyState, "user-1");
   assert.equal(backup.state.shortcuts[0].url, "https://openai.com", "manual backup must preserve shortcuts");
   assert.equal(backup.ownerId, "user-1", "migration backups must retain their account owner");
+  assert.notEqual(accountScopedKey("sync-restore-point", "user-1"), accountScopedKey("sync-restore-point", "user-2"), "restore points must be account scoped");
+  assert.notEqual(accountScopedKey("migration-backup", "user-1"), accountScopedKey("migration-backup"), "signed-in and anonymous backups must not share a key");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.3" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.4" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -124,9 +139,12 @@ try {
 
   const localMediaState = normalizeState({
     ...legacyState,
+    shortcuts: [{ ...legacyState.shortcuts[0], iconUrl: "data:image/png;base64,private-shortcut-icon" }],
+    shortcutFolders: [{ ...legacyState.shortcutFolders[0], iconUrl: "data:image/png;base64,private-folder-icon" }],
     settings: {
       ...legacyState.settings,
       photoFrameImage: "data:image/webp;base64,private-photo",
+      photoFrameTitle: "private-photo-filename",
       wallpaper: "data:image/webp;base64,private-wallpaper",
       wallpaperPreset: "custom-private",
       wallpaperCollection: ["aurora-lake", "custom-private"],
@@ -135,6 +153,9 @@ try {
   });
   const cloudState = prepareCloudState(localMediaState);
   assert.equal(cloudState.settings.photoFrameImage, undefined, "private photos must remain local-only");
+  assert.equal(cloudState.settings.photoFrameTitle, undefined, "private photo filenames must remain local-only");
+  assert.equal(cloudState.shortcuts[0].iconUrl, undefined, "inline shortcut icons must remain local-only");
+  assert.equal(cloudState.shortcutFolders[0].iconUrl, undefined, "inline folder icons must remain local-only");
   assert.deepEqual(cloudState.settings.customWallpapers, [], "custom wallpaper payloads must remain local-only");
   assert.equal(cloudState.settings.wallpaper, undefined, "inline wallpaper data must not be uploaded");
   assert.deepEqual(cloudState.settings.wallpaperCollection, ["aurora-lake"], "cloud wallpaper collection must exclude local assets");
@@ -148,11 +169,47 @@ try {
     sync: { ...legacyState.sync, remoteRevision: 7 }
   }));
   assert.equal(mergedWithRemote.settings.photoFrameImage, localMediaState.settings.photoFrameImage, "remote merges must preserve local photos");
+  assert.equal(mergedWithRemote.settings.photoFrameTitle, localMediaState.settings.photoFrameTitle, "remote merges must preserve local photo titles");
   assert.equal(mergedWithRemote.settings.customWallpapers?.[0]?.id, "custom-private", "remote merges must preserve local wallpapers");
+  assert.equal(mergedWithRemote.shortcuts[0].iconUrl, localMediaState.shortcuts[0].iconUrl, "remote merges must preserve local shortcut icons");
+  assert.equal(mergedWithRemote.shortcutFolders[0].iconUrl, localMediaState.shortcutFolders[0].iconUrl, "remote merges must preserve local folder icons");
   assert.equal(mergedWithRemote.sync.remoteRevision, 7, "remote revision must survive merges");
 
   const pulled = markPulled(localMediaState, { ...mergedWithRemote, sync: { ...mergedWithRemote.sync, remoteRevision: 9 } });
   assert.equal(pulled.sync.remoteRevision, 9, "pull metadata must retain the server revision");
+
+  const deviceA = normalizeState({
+    ...legacyState,
+    shortcuts: [
+      legacyState.shortcuts[0],
+      { id: "device-a", title: "设备 A", url: "https://a.example", iconColor: "#14B8A6", pinned: false, order: 1, updatedAt: "2026-07-16T01:00:00.000Z" }
+    ],
+    updatedAt: "2026-07-16T01:00:00.000Z",
+    sync: { ...legacyState.sync, remoteRevision: 10 }
+  });
+  const deviceB = normalizeState({
+    ...legacyState,
+    shortcuts: [
+      legacyState.shortcuts[0],
+      { id: "device-b", title: "设备 B", url: "https://b.example", iconColor: "#14B8A6", pinned: false, order: 2, updatedAt: "2026-07-16T02:00:00.000Z" }
+    ],
+    updatedAt: "2026-07-16T02:00:00.000Z",
+    sync: { ...legacyState.sync, remoteRevision: 11 }
+  });
+  const concurrentMerge = mergeRemote(deviceA, deviceB);
+  assert.deepEqual(
+    concurrentMerge.shortcuts.map((shortcut) => shortcut.id).sort(),
+    ["device-a", "device-b", "s1"],
+    "concurrent writes on different records must merge without dropping either device"
+  );
+  assert.equal(concurrentMerge.sync.remoteRevision, 11, "concurrent merge must retain the newest server revision");
+
+  const hardeningMigration = await readFile(join(repoRoot, "supabase/migrations/0006_harden_sync_boundaries.sql"), "utf8");
+  assert.match(hardeningMigration, /p_name is distinct from 'primary'/, "sync RPC must reject unbounded snapshot names");
+  assert.match(hardeningMigration, /current_user_id uuid := auth\.uid\(\)/, "sync RPC must bind writes to the authenticated user");
+  assert.match(hardeningMigration, /revision = p_expected_revision/, "sync RPC must use optimistic revision checks");
+  assert.match(hardeningMigration, /2097152/, "sync RPC must enforce a payload size limit");
+  assert.match(hardeningMigration, /revoke all[\s\S]*public\.shortcut_groups/, "legacy direct access must remain disabled");
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

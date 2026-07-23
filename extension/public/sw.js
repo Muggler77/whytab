@@ -1,6 +1,7 @@
-const CACHE_NAME = "whytab-shell-v0.5.3";
+const CACHE_NAME = "whytab-shell-v0.5.4";
 const ICON_CACHE_NAME = "whytab-icons-v1";
-const APP_SHELL = ["./", "./app.webmanifest?v=0.5.3", "./icons/icon128.png?v=0.5.3", "./wallpapers/photo/mobile/aurora-lake.webp"];
+const MAX_ICON_CACHE_ENTRIES = 200;
+const APP_SHELL = ["./", "./app.webmanifest?v=0.5.4", "./icons/icon128.png?v=0.5.4", "./wallpapers/photo/mobile/aurora-lake.webp"];
 const ICON_HOSTS = new Set(["cdn.simpleicons.org", "icons.duckduckgo.com", "www.google.com"]);
 const PRESERVED_CACHES = new Set([CACHE_NAME, ICON_CACHE_NAME]);
 
@@ -31,13 +32,19 @@ self.addEventListener("activate", (event) => {
 });
 
 const cacheExternalIcon = async (request) => {
-  const cache = await caches.open(ICON_CACHE_NAME);
-  const cached = await cache.match(request);
+  const cache = await caches.open(ICON_CACHE_NAME).catch(() => undefined);
+  const cached = cache ? await cache.match(request).catch(() => undefined) : undefined;
   if (cached) return cached;
 
   const response = await fetch(request);
-  if (response.ok || response.type === "opaque") {
-    void cache.put(request, response.clone());
+  if (cache && (response.ok || response.type === "opaque")) {
+    try {
+      await cache.put(request, response.clone());
+      const keys = await cache.keys();
+      await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_ICON_CACHE_ENTRIES)).map((key) => cache.delete(key)));
+    } catch {
+      // A full or unavailable cache must not turn a successful icon response into a failure.
+    }
   }
   return response;
 };
