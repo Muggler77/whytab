@@ -58,7 +58,7 @@ try {
   });
 
   const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(migrationsOutput).href);
-  const { markPulled, mergeRemote, normalizeState, prepareCloudState, stampSettingsChanges } = await import(pathToFileURL(syncOutput).href);
+  const { markPulled, mergeRemote, normalizeState, prepareCloudState, stampSettingsChanges, stampStateSnapshot } = await import(pathToFileURL(syncOutput).href);
   const { accountScopedKey } = await import(pathToFileURL(dbOutput).href);
   const { normalizeHttpUrl, safeHttpHref } = await import(pathToFileURL(urlsOutput).href);
   const now = new Date("2026-07-15T00:00:00.000Z").toISOString();
@@ -102,7 +102,7 @@ try {
   assert.notEqual(accountScopedKey("sync-restore-point", "user-1"), accountScopedKey("sync-restore-point", "user-2"), "restore points must be account scoped");
   assert.notEqual(accountScopedKey("migration-backup", "user-1"), accountScopedKey("migration-backup"), "signed-in and anonymous backups must not share a key");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.6" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.7" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -265,6 +265,18 @@ try {
   };
   const pageDeletionMerge = mergeRemote(settingsBase, deletedPageState);
   assert.equal(pageDeletionMerge.settings.customNavPages[0].deletedAt, "2026-07-24T03:00:00.000Z", "deleted custom pages must not be resurrected by another device");
+
+  const restoreTarget = normalizeState({
+    ...deviceA,
+    shortcuts: [legacyState.shortcuts[0]],
+    updatedAt: "2026-07-24T04:00:00.000Z"
+  });
+  const stampedRestore = stampStateSnapshot(deviceA, restoreTarget, "2026-07-24T04:00:00.000Z");
+  const restoredShortcut = stampedRestore.shortcuts.find((shortcut) => shortcut.id === "device-a");
+  assert.equal(restoredShortcut?.deletedAt, "2026-07-24T04:00:00.000Z", "restores must tombstone records removed from the restored snapshot");
+  assert.equal(restoredShortcut?.updatedAt, "2026-07-24T04:00:00.000Z", "restores must stamp changed records with the restore time");
+  const restoreMerge = mergeRemote(stampedRestore, deviceA);
+  assert.equal(restoreMerge.shortcuts.find((shortcut) => shortcut.id === "device-a")?.deletedAt, "2026-07-24T04:00:00.000Z", "restore tombstones must win over stale remote records");
 
   assert.equal(normalizeHttpUrl("example.com"), "https://example.com/", "hostnames should normalize to HTTPS");
   assert.equal(normalizeHttpUrl("javascript:alert(1)"), undefined, "script URLs must be rejected");

@@ -81,6 +81,7 @@ import {
   signOut,
   signUp,
   stampSettingsChanges,
+  stampStateSnapshot,
   synchronizeSnapshot,
   updatePassword,
   type SyncStatus
@@ -812,9 +813,18 @@ export default function App() {
       return next;
     } catch (error) {
       if (accountEpochRef.current === operationEpoch) {
-        activeUserIdRef.current = previousUserId;
+        const enteredNewAccount = previousUserId !== user.id;
+        activeUserIdRef.current = enteredNewAccount ? undefined : previousUserId;
+        if (enteredNewAccount) {
+          await signOut(stateRef.current.settings.supabaseUrl, stateRef.current.settings.supabaseAnonKey).catch(() => undefined);
+          syncLockRef.current = false;
+          const blank = normalizeState(defaultState());
+          applyState(blank);
+          await saveStateForAccount(blank).catch(() => undefined);
+          await refreshBackupAvailability(undefined).catch(() => undefined);
+        }
         setSync((old) => ({
-          ...old,
+          ...(enteredNewAccount ? { user: null, autoSync: false } : old),
           syncing: false,
           message: error instanceof Error ? `账号数据加载失败：${error.message}` : "账号数据加载失败"
         }));
@@ -918,7 +928,12 @@ export default function App() {
   const undoLastChange = () => {
     const snapshot = undoSnapshotRef.current;
     if (!snapshot) return;
-    const restored = { ...snapshot, updatedAt: nowIso() };
+    const current = stateRef.current;
+    const restored = stampStateSnapshot(
+      current,
+      normalizeState({ ...snapshot, sync: current.sync }),
+      nowIso()
+    );
     undoSnapshotRef.current = undefined;
     setUndoLabel("");
     applyState(restored);
@@ -1127,7 +1142,12 @@ export default function App() {
       setRestoreAvailable(false);
       return;
     }
-    const restored = { ...snapshot.state, updatedAt: nowIso() };
+    const current = stateRef.current;
+    const restored = stampStateSnapshot(
+      current,
+      normalizeState(withCurrentServiceConfig({ ...snapshot.state, sync: current.sync }, current)),
+      nowIso()
+    );
     applyState(restored);
     showToast(`已回到${new Date(snapshot.savedAt).toLocaleString("zh-CN")}的本机版本`);
   };
@@ -1139,7 +1159,12 @@ export default function App() {
       setMigrationBackupAvailable(false);
       return;
     }
-    const restored = normalizeState({ ...backup.state, updatedAt: nowIso() });
+    const current = stateRef.current;
+    const restored = stampStateSnapshot(
+      current,
+      normalizeState(withCurrentServiceConfig({ ...backup.state, sync: current.sync }, current)),
+      nowIso()
+    );
     applyState(restored);
     showToast(`已回到${new Date(backup.savedAt).toLocaleString("zh-CN")}的更新前数据`);
   };
@@ -1583,9 +1608,8 @@ export default function App() {
       throw new Error("备份来自更新版本，请先升级 whytab");
     }
     const current = stateRef.current;
-    const restored = normalizeState(withCurrentServiceConfig({
+    const imported = normalizeState(withCurrentServiceConfig({
       ...parsed.state,
-      updatedAt: nowIso(),
       sync: {
         ...parsed.state.sync,
         deviceId: current.sync.deviceId || uid(),
@@ -1597,6 +1621,7 @@ export default function App() {
         lastRemoteUpdatedAt: current.sync.lastRemoteUpdatedAt
       }
     }, current));
+    const restored = stampStateSnapshot(current, imported, nowIso());
     applyState(restored);
     await saveStateForAccount(restored, activeUserIdRef.current);
     showToast("完整备份已恢复；登录状态和当前设备信息保持不变");

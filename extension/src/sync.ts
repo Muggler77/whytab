@@ -340,6 +340,66 @@ const mergeSettings = (local: Settings, remote: Settings): Settings => {
   };
 };
 
+const stripRecordClocks = <T extends SyncRecord>(record: T) => {
+  const { updatedAt: _updatedAt, deletedAt: _deletedAt, ...content } = record;
+  return content;
+};
+
+const recordContentChanged = <T extends SyncRecord>(left: T, right: T) => (
+  JSON.stringify(stripRecordClocks(left)) !== JSON.stringify(stripRecordClocks(right))
+  || Boolean(left.deletedAt) !== Boolean(right.deletedAt)
+);
+
+const stampRecordSet = <T extends SyncRecord>(current: T[], target: T[], updatedAt: string) => {
+  const currentById = new Map(current.map((record) => [record.id, record]));
+  const targetIds = new Set(target.map((record) => record.id));
+  const stamped = target.map((record) => {
+    const previous = currentById.get(record.id);
+    if (previous && !recordContentChanged(previous, record)) return record;
+    return {
+      ...record,
+      updatedAt,
+      deletedAt: record.deletedAt ? updatedAt : undefined
+    };
+  });
+
+  current.forEach((record) => {
+    if (!targetIds.has(record.id)) {
+      stamped.push({
+        ...record,
+        updatedAt,
+        deletedAt: updatedAt
+      });
+    }
+  });
+  return stamped;
+};
+
+export function stampStateSnapshot(current: AppState, target: AppState, updatedAt: string): AppState {
+  const settings = stampSettingsChanges(current.settings, target.settings, updatedAt);
+  settings.customNavPages = stampRecordSet(
+    current.settings.customNavPages || [],
+    target.settings.customNavPages || [],
+    updatedAt
+  );
+  settings.fieldUpdatedAt = {
+    ...(settings.fieldUpdatedAt || {}),
+    customNavPages: updatedAt
+  };
+
+  return {
+    ...target,
+    shortcutGroups: stampRecordSet(current.shortcutGroups, target.shortcutGroups, updatedAt),
+    shortcutFolders: stampRecordSet(current.shortcutFolders || [], target.shortcutFolders || [], updatedAt),
+    shortcuts: stampRecordSet(current.shortcuts, target.shortcuts, updatedAt),
+    todos: stampRecordSet(current.todos, target.todos, updatedAt),
+    notes: stampRecordSet(current.notes, target.notes, updatedAt),
+    countdowns: stampRecordSet(current.countdowns, target.countdowns, updatedAt),
+    settings,
+    updatedAt
+  };
+}
+
 const schemaVersion = (state?: Partial<AppState>) => state?.dataSchemaVersion || state?.version || 1;
 
 function ensureRemoteCompatible(remote: AppState) {
