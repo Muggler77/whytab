@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { accountScopedKey, downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
+import { accountScopedKey, deleteKey, deleteStateForAccount, downloadJson, loadStateForAccount, readKey, saveStateForAccount, writeKey } from "./db";
 import { defaultState, defaultWidgetOrder, defaultWidgetSizes, nowIso, uid } from "./defaultState";
 import { colorFor, curatedIconCount, curatedIconFor, fallbackFaviconFor, faviconFor, importedToShortcuts, parseImportText, siteIconCandidatesFor } from "./importers";
 import { MIGRATION_BACKUP_KEY, type StateBackup } from "./migrations";
@@ -67,6 +67,7 @@ import { fetchWeather, fetchWeatherByCoordinates, getCachedWeather, getDevicePos
 import { checkForUpdate, type UpdateCheckResult } from "./updates";
 import { APP_VERSION, DATA_SCHEMA_VERSION, UPDATE_TARGET_URL } from "./version";
 import {
+  deleteAccount,
   getUser,
   getCachedUser,
   markPulled,
@@ -79,11 +80,13 @@ import {
   signIn,
   signOut,
   signUp,
+  stampSettingsChanges,
   synchronizeSnapshot,
   updatePassword,
   type SyncStatus
 } from "./sync";
 import type { AppState, Countdown, CustomNavPage, CustomNavPageIcon, RatesState, SearchEngine, Shortcut, ShortcutFolder, Todo, WeatherState, WidgetKey, WidgetSize } from "./types";
+import { normalizeHttpUrl, safeHttpHref } from "./urls";
 
 type Dialog = "shortcut" | "folder" | "import" | "library" | "pages" | "settings" | "sync" | "timezone" | null;
 type ShortcutMenuState = { x: number; y: number; shortcutId: string } | null;
@@ -99,10 +102,11 @@ type ToastAction = { label: string; onClick: () => void };
 const SYNC_RESTORE_KEY = "sync-restore-point";
 const PUBLIC_AUTH_REDIRECT_URL = "https://whytab.pages.dev/";
 const HOSTED_APP_ORIGIN = "https://whytab.pages.dev";
+const USE_BROWSER_DEFAULT_SEARCH = window.location.protocol === "chrome-extension:" && Boolean(globalThis.chrome?.search?.query);
 const homePageOrder: HomePage[] = ["widgets", "shortcuts", "tools"];
 const WEATHER_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const RATES_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-const ICON_LOAD_TIMEOUT_MS = 3600;
+const ICON_LOAD_TIMEOUT_MS = 2400;
 const MIN_SHARP_ICON_SIZE = 32;
 const MAX_CUSTOM_WALLPAPERS = 12;
 const MAX_IMAGE_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -205,11 +209,9 @@ const customNavPageIcons: Record<CustomNavPageIcon, { label: string; Icon: typeo
   plane: { label: "旅行", Icon: Plane }
 };
 
-const ensureUrl = (url: string) => (/^https?:\/\//i.test(url) ? url : `https://${url}`);
-
 const comparableUrl = (url: string) => {
   try {
-    const parsed = new URL(ensureUrl(url));
+    const parsed = new URL(normalizeHttpUrl(url) || url);
     parsed.hash = "";
     return parsed.toString().replace(/\/$/, "").toLowerCase();
   } catch {
@@ -296,12 +298,10 @@ const iconCandidatesFor = (url: string, iconUrl?: string, title = "") => {
       : undefined,
     curated ? { url: curated, kind: "brand-mark", vector: true } : undefined,
     serviceIcon ? { url: serviceIcon, kind: "site-art", vector: false } : undefined,
+    fallbackIcon ? { url: fallbackIcon, kind: "site-art", vector: false } : undefined,
     directCandidates[0] ? { url: directCandidates[0], kind: "site-art", vector: false } : undefined,
     directCandidates[1] ? { url: directCandidates[1], kind: "site-art", vector: false } : undefined,
     directCandidates[2] ? { url: directCandidates[2], kind: "site-art", vector: false } : undefined,
-    directCandidates[3] ? { url: directCandidates[3], kind: "site-art", vector: false } : undefined,
-    directCandidates[4] ? { url: directCandidates[4], kind: "site-art", vector: false } : undefined,
-    fallbackIcon ? { url: fallbackIcon, kind: "site-art", vector: false } : undefined,
     iconUrl && isGeneratedFavicon(iconUrl) ? { url: iconUrl, kind: "site-art", vector: false } : undefined
   ];
   const seen = new Set<string>();
@@ -326,7 +326,7 @@ function ShortcutIconContent({ url, iconUrl, title = "", fallback = "", priority
 }
 
 function ShortcutIconImage({ url, iconUrl, title = "", alt = "", fallback = "", priority = false }: { url: string; iconUrl?: string; title?: string; alt?: string; fallback?: string; priority?: boolean }) {
-  const candidates = useMemo(() => iconCandidatesFor(url, iconUrl, title), [url, iconUrl, title]);
+  const candidates = useMemo(() => iconCandidatesFor(url, iconUrl, title), [url, iconUrl, title, remoteIconLookupEnabled]);
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [shouldLoad, setShouldLoad] = useState(priority);
@@ -898,7 +898,13 @@ export default function App() {
 
   const updateState = (updater: (state: AppState) => AppState) => {
     setState((current) => {
-      const next = { ...updater(current), updatedAt: nowIso() };
+      const updatedAt = nowIso();
+      const updated = updater(current);
+      const next = {
+        ...updated,
+        settings: stampSettingsChanges(current.settings, updated.settings, updatedAt),
+        updatedAt
+      };
       stateRef.current = next;
       return next;
     });
@@ -1008,7 +1014,7 @@ export default function App() {
   const customNavPages = useMemo(() => {
     const liveGroupIds = new Set(groups.map((group) => group.id));
     return (state.settings.customNavPages || [])
-      .filter((page) => liveGroupIds.has(page.groupId))
+      .filter((page) => !page.deletedAt && liveGroupIds.has(page.groupId))
       .sort((a, b) => a.order - b.order);
   }, [groups, state.settings.customNavPages]);
 
@@ -1204,9 +1210,13 @@ export default function App() {
   }, [performAutoSync, ready]);
 
   const saveShortcut = (shortcut: Partial<Shortcut>) => {
+    const url = normalizeHttpUrl(shortcut.url || "");
+    if (!url) {
+      showToast("网站地址只支持 http:// 或 https://");
+      return;
+    }
     updateState((current) => {
       const title = shortcut.title?.trim() || "未命名";
-      const url = ensureUrl(shortcut.url?.trim() || "");
       const updatedAt = nowIso();
       const existing = shortcut.id ? current.shortcuts.find((item) => item.id === shortcut.id) : undefined;
       const next: Shortcut = {
@@ -1416,7 +1426,7 @@ export default function App() {
         ...current.settings,
         customNavPages: [
           ...(current.settings.customNavPages || []),
-          { id: pageId, name: label, groupId, icon, order: (current.settings.customNavPages || []).length, updatedAt }
+          { id: pageId, name: label, groupId, icon, order: (current.settings.customNavPages || []).filter((page) => !page.deletedAt).length, updatedAt }
         ],
         updatedAt
       }
@@ -1432,14 +1442,24 @@ export default function App() {
     const confirmed = window.confirm(`从导航删除“${page.name}”？其中的网站和分类会继续保留。`);
     if (!confirmed) return;
     rememberUndo("删除导航页面");
+    const deletedAt = nowIso();
+    const remainingPageOrder = new Map(
+      customNavPages
+        .filter((candidate) => candidate.id !== page.id)
+        .map((candidate, order) => [candidate.id, order])
+    );
     updateState((current) => ({
       ...current,
       settings: {
         ...current.settings,
         customNavPages: (current.settings.customNavPages || [])
-          .filter((item) => item.id !== page.id)
-          .map((item, order) => ({ ...item, order })),
-        updatedAt: nowIso()
+          .map((item) => {
+            if (item.id === page.id) return { ...item, deletedAt, updatedAt: deletedAt };
+            if (item.deletedAt) return item;
+            const order = remainingPageOrder.get(item.id);
+            return order === undefined || order === item.order ? item : { ...item, order, updatedAt: deletedAt };
+          }),
+        updatedAt: deletedAt
       }
     }));
     if (activeCustomPageId === page.id) {
@@ -1596,6 +1616,10 @@ export default function App() {
   const runSearch = () => {
     const text = searchText.trim();
     if (!text) return;
+    if (USE_BROWSER_DEFAULT_SEARCH) {
+      void chrome.search.query({ text, disposition: "NEW_TAB" });
+      return;
+    }
     window.open(searchEngines[currentSearchEngine].url(text), "_blank", "noopener,noreferrer");
   };
   const toggleSearchEngine = () => {
@@ -1999,13 +2023,15 @@ export default function App() {
             <button type="button" className="timezone-button" title="选择时区" onClick={() => setDialog("timezone")}>{selectedTimeZoneOption.label}<span>{selectedTimeZoneOption.value}</span></button>
           </div>
           <div className="search hero-search">
-            <button type="button" className="engine-toggle" title="点击切换搜索引擎" onClick={toggleSearchEngine}>{searchEngines[currentSearchEngine].label}</button>
+            {USE_BROWSER_DEFAULT_SEARCH
+              ? <span className="engine-toggle engine-default">默认</span>
+              : <button type="button" className="engine-toggle" title="点击切换搜索引擎" onClick={toggleSearchEngine}>{searchEngines[currentSearchEngine].label}</button>}
             <Search size={20} />
             <input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); runSearch(); } }}
-              placeholder={`${searchEngines[currentSearchEngine].label}搜索`}
+              placeholder={USE_BROWSER_DEFAULT_SEARCH ? "浏览器默认搜索" : `${searchEngines[currentSearchEngine].label}搜索`}
             />
             <button type="button" className="search-submit" aria-label="搜索" title="搜索" onClick={runSearch}><Search size={18} /></button>
           </div>
@@ -2185,7 +2211,7 @@ export default function App() {
                         onDragOver={(event) => event.preventDefault()}
                         onDrop={() => moveShortcut(shortcut.id)}
                       >
-                        <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
+                        <a href={safeHttpHref(shortcut.url)} title={shortcut.url} target="_blank" rel="noreferrer">
                           <span className="shortcut-icon">
                             <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
                           </span>
@@ -2417,6 +2443,34 @@ export default function App() {
             lastSyncedUpdatedAtRef.current = undefined;
             showToast("已退出登录，本机已切换到未登录空白数据");
           }}
+          onDeleteAccount={async (password) => {
+            const deletingUserId = activeUserIdRef.current;
+            const current = stateRef.current;
+            const deletingEmail = sync.user?.email;
+            if (!deletingUserId || !deletingEmail) throw new Error("当前没有已登录账号");
+
+            const verifiedUser = await signIn(current.settings.supabaseUrl || "", current.settings.supabaseAnonKey || "", deletingEmail, password);
+            if (verifiedUser?.id !== deletingUserId) throw new Error("账号验证失败，请重新登录后再试");
+            accountEpochRef.current += 1;
+            await deleteAccount(current.settings.supabaseUrl || "", current.settings.supabaseAnonKey || "");
+            activeUserIdRef.current = undefined;
+            syncLockRef.current = false;
+            const blank = normalizeState(defaultState());
+            applyState(blank);
+            await saveStateForAccount(blank);
+            const cleanup = await Promise.allSettled([
+              deleteStateForAccount(deletingUserId),
+              deleteKey(accountScopedKey(SYNC_RESTORE_KEY, deletingUserId)),
+              deleteKey(accountScopedKey(MIGRATION_BACKUP_KEY, deletingUserId))
+            ]);
+            await refreshBackupAvailability(undefined);
+            setSync({ user: null, syncing: false, autoSync: blank.sync?.autoSync, message: "未登录" });
+            lastSyncedUpdatedAtRef.current = undefined;
+            setDialog(null);
+            showToast(cleanup.some((result) => result.status === "rejected")
+              ? "账号和云端数据已删除；部分本机缓存清理失败，请清理浏览器网站数据"
+              : "账号、云端数据和此设备上的账号数据已永久删除");
+          }}
           onResetPassword={async (email) => {
             const { supabaseUrl, supabaseAnonKey } = state.settings;
             if (!supabaseUrl || !supabaseAnonKey) throw new Error("同步服务暂未配置，请稍后再试");
@@ -2642,7 +2696,7 @@ function HomeShortcuts({ tiles, iconSize, editing, onOpenFolder, onMoveTile }: {
         ) : (
           <a
             className={tileClass("home-shortcut", key)}
-            href={item.shortcut.url}
+            href={safeHttpHref(item.shortcut.url)}
             key={item.shortcut.id}
             data-shortcut-id={item.shortcut.id}
             title={item.shortcut.url}
@@ -2679,7 +2733,7 @@ function Dock({ shortcuts }: { shortcuts: Shortcut[] }) {
   return (
     <nav className="dock" aria-label="固定快捷入口">
       {shortcuts.slice(0, 14).map((shortcut) => (
-        <a key={shortcut.id} data-shortcut-id={shortcut.id} href={shortcut.url} title={shortcut.title} target="_blank" rel="noreferrer">
+        <a key={shortcut.id} data-shortcut-id={shortcut.id} href={safeHttpHref(shortcut.url)} title={shortcut.title} target="_blank" rel="noreferrer">
           <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
         </a>
       ))}
@@ -2735,7 +2789,7 @@ function ShortcutContextMenu({ menu, shortcut, onClose, onEdit, onPin, onDelete 
   const position = contextMenuPosition(menu.x, menu.y, 188, 188);
   return createPortal(
     <div ref={surfaceRef} className="shortcut-menu" role="menu" aria-label={`${shortcut.title}快捷操作`} tabIndex={-1} style={position} onContextMenu={(event) => event.preventDefault()}>
-      <a role="menuitem" href={shortcut.url} target="_blank" rel="noreferrer">打开新标签页</a>
+      <a role="menuitem" href={safeHttpHref(shortcut.url)} target="_blank" rel="noreferrer">打开新标签页</a>
       <button type="button" role="menuitem" onClick={() => onPin(shortcut.id)}><Pin size={15} /> {shortcut.pinned ? "从主页移除" : "放到主页"}</button>
       <button type="button" role="menuitem" onClick={() => onEdit(shortcut)}><Edit3 size={15} /> 编辑图标</button>
       <button type="button" role="menuitem" className="danger" onClick={() => onDelete(shortcut.id)}><Trash2 size={15} /> 删除</button>
@@ -3713,7 +3767,7 @@ function FolderView({ folder, shortcuts, onClose, onAdd, onEditFolder }: {
               key={shortcut.id}
               data-shortcut-id={shortcut.id}
             >
-              <a href={shortcut.url} title={shortcut.url} target="_blank" rel="noreferrer">
+              <a href={safeHttpHref(shortcut.url)} title={shortcut.url} target="_blank" rel="noreferrer">
                 <span className="shortcut-icon">
                   <ShortcutIconContent url={shortcut.url} iconUrl={shortcut.iconUrl} title={shortcut.title} fallback={shortcut.title.slice(0, 1)} />
                 </span>
@@ -4406,13 +4460,14 @@ function TimeZoneDialog({ current, onClose, onChoose }: { current: string; onClo
   );
 }
 
-function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onResetPassword, onUpdatePassword, onSync, restoreAvailable, onRestore }: {
+function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onDeleteAccount, onResetPassword, onUpdatePassword, onSync, restoreAvailable, onRestore }: {
   state: AppState;
   sync: SyncStatus;
   updateState: (updater: (state: AppState) => AppState) => void;
   onClose: () => void;
   onLogin: (mode: "login" | "signup", email: string, password: string) => Promise<AuthResult>;
   onSignOut: () => Promise<void>;
+  onDeleteAccount: (password: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
   onUpdatePassword: (password: string) => Promise<void>;
   onSync: (mode: SyncMode) => Promise<void>;
@@ -4425,6 +4480,9 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onR
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -4482,6 +4540,26 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onR
     } catch (err) {
       setError(err instanceof Error ? err.message : "密码更新失败");
     } finally {
+      setBusy(false);
+    }
+  };
+  const deleteCurrentAccount = async () => {
+    if (!sync.user?.email || deleteConfirmText.trim().toLowerCase() !== sync.user.email.toLowerCase()) {
+      setError("请输入当前账号邮箱以确认永久删除");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      if (!deletePassword) {
+        setError("请输入当前账号密码");
+        setBusy(false);
+        return;
+      }
+      await onDeleteAccount(deletePassword);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "账号删除失败");
       setBusy(false);
     }
   };
@@ -4635,12 +4713,41 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onR
               <button type="button" disabled={busy || newPassword.length < 10} onClick={() => void changePassword()}><Save size={16} /> 保存新密码</button>
             </div>
           )}
+          {showDeleteAccount && (
+            <div className="sync-delete-account">
+              <strong>永久删除账号与云端数据</strong>
+              <p>此操作会删除账号、云端同步数据和此设备上的账号数据，且无法恢复。请先导出完整备份。</p>
+              <input
+                type="email"
+                autoComplete="off"
+                value={deleteConfirmText}
+                onChange={(event) => setDeleteConfirmText(event.target.value)}
+                placeholder={sync.user.email || "输入当前账号邮箱"}
+              />
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)}
+                placeholder="输入当前账号密码"
+              />
+              <button
+                type="button"
+                className="danger"
+                disabled={busy || !deletePassword || deleteConfirmText.trim().toLowerCase() !== sync.user.email?.toLowerCase()}
+                onClick={() => void deleteCurrentAccount()}
+              >
+                <Trash2 size={16} /> 永久删除
+              </button>
+            </div>
+          )}
           {notice && <p className="sync-auth-success">{notice}</p>}
           {error && <p className="warning">{error}</p>}
           <div className="button-row">
             <button disabled={!restoreAvailable || sync.syncing} onClick={() => void onRestore()}>回到同步前版本</button>
             <button type="button" onClick={() => { setShowPasswordUpdate((value) => !value); setError(""); setNotice(""); }}><KeyRound size={16} /> 修改密码</button>
             <button onClick={onSignOut}><LogOut size={16} /> 退出登录</button>
+            <button type="button" className="danger" onClick={() => { setShowDeleteAccount((value) => !value); setDeleteConfirmText(""); setDeletePassword(""); setError(""); setNotice(""); }}><Trash2 size={16} /> 删除账号</button>
           </div>
         </div>
       )}

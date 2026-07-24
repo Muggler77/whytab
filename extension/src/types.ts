@@ -72,6 +72,7 @@ export type CustomNavPage = {
   icon: CustomNavPageIcon;
   order: number;
   updatedAt: string;
+  deletedAt?: string;
 };
 
 export type CustomWallpaper = {
@@ -116,6 +117,7 @@ export type Settings = {
   timeZone?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  fieldUpdatedAt?: Record<string, string>;
   updatedAt?: string;
 };
 

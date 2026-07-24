@@ -1,7 +1,7 @@
 import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from "./projectConfig";
 import { defaultWidgetSizes } from "./defaultState";
-import type { AppState, Countdown, Note, Shortcut, ShortcutFolder, ShortcutGroup, Todo, WidgetKey } from "./types";
+import type { AppState, Countdown, Note, Settings, Shortcut, ShortcutFolder, ShortcutGroup, Todo, WidgetKey } from "./types";
 import { compareVersions } from "./updates";
 import { APP_VERSION, DATA_SCHEMA_VERSION, MIN_SUPPORTED_APP_VERSION } from "./version";
 
@@ -93,6 +93,16 @@ export async function updatePassword(url: string, anonKey: string, password: str
   if (error) throw error;
 }
 
+export async function deleteAccount(url: string, anonKey: string) {
+  const supabase = await getSupabase(url, anonKey);
+  if (!supabase) throw new Error("同步服务暂未配置，请稍后再试");
+  const { error } = await supabase.functions.invoke("delete-account", {
+    method: "POST"
+  });
+  if (error) throw error;
+  await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+}
+
 export class SyncConflictError extends Error {
   constructor() {
     super("云端数据刚刚发生变化，正在重新合并");
@@ -106,6 +116,11 @@ const MAX_CLOUD_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 export function prepareCloudState(state: AppState): AppState {
   const normalized = normalizeState(state);
   const customIds = new Set((normalized.settings.customWallpapers || []).map((item) => item.id));
+  const fieldUpdatedAt = { ...(normalized.settings.fieldUpdatedAt || {}) };
+  ["photoFrameImage", "photoFrameTitle", "customWallpapers", "supabaseUrl", "supabaseAnonKey"].forEach((key) => {
+    delete fieldUpdatedAt[key];
+  });
+  if (isLocalImage(normalized.settings.wallpaper)) delete fieldUpdatedAt.wallpaper;
   return {
     ...normalized,
     shortcuts: normalized.shortcuts.map((shortcut) => (
@@ -123,7 +138,8 @@ export function prepareCloudState(state: AppState): AppState {
       wallpaperPreset: customIds.has(normalized.settings.wallpaperPreset || "") ? "aurora-lake" : normalized.settings.wallpaperPreset,
       wallpaperCollection: (normalized.settings.wallpaperCollection || []).filter((id) => !customIds.has(id)),
       supabaseUrl: undefined,
-      supabaseAnonKey: undefined
+      supabaseAnonKey: undefined,
+      fieldUpdatedAt
     }
   };
 }
@@ -225,6 +241,104 @@ const normalizeWidgetOrder = (order?: WidgetKey[]) => {
 };
 
 const time = (value?: string) => (value ? new Date(value).getTime() || 0 : 0);
+const settingsMetadataKeys = new Set(["fieldUpdatedAt", "updatedAt"]);
+const nestedRecordSettingKeys = new Set(["widgets", "widgetSizes", "calendarRecords"]);
+const settingsKeys = (settings: Settings) => Object.keys(settings).filter((key) => !settingsMetadataKeys.has(key));
+const settingRecord = (value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+  ? value as Record<string, unknown>
+  : {};
+
+const normalizeSettingsFieldUpdatedAt = (settings: Settings, fallback: string) => {
+  const current = settings.fieldUpdatedAt || {};
+  return {
+    ...current,
+    ...Object.fromEntries(settingsKeys(settings).map((key) => [key, current[key] || fallback]))
+  };
+};
+
+export function stampSettingsChanges(current: Settings, next: Settings, updatedAt: string): Settings {
+  const keys = new Set([...settingsKeys(current), ...settingsKeys(next)]);
+  const fieldUpdatedAt = { ...(current.fieldUpdatedAt || {}), ...(next.fieldUpdatedAt || {}) };
+  let changed = false;
+
+  keys.forEach((key) => {
+    if (nestedRecordSettingKeys.has(key)) {
+      const currentRecord = settingRecord((current as unknown as Record<string, unknown>)[key]);
+      const nextRecord = settingRecord((next as unknown as Record<string, unknown>)[key]);
+      const childKeys = new Set([...Object.keys(currentRecord), ...Object.keys(nextRecord)]);
+      let nestedChanged = false;
+      childKeys.forEach((childKey) => {
+        if (Object.is(currentRecord[childKey], nextRecord[childKey])) return;
+        fieldUpdatedAt[`${key}.${childKey}`] = updatedAt;
+        nestedChanged = true;
+      });
+      if (nestedChanged) {
+        changed = true;
+      }
+      return;
+    }
+    if (Object.is(current[key as keyof Settings], next[key as keyof Settings])) return;
+    fieldUpdatedAt[key] = updatedAt;
+    changed = true;
+  });
+
+  if (!changed) return { ...next, fieldUpdatedAt };
+  return { ...next, fieldUpdatedAt, updatedAt };
+}
+
+const mergeSettings = (local: Settings, remote: Settings): Settings => {
+  const localFieldUpdatedAt = normalizeSettingsFieldUpdatedAt(local, local.updatedAt || "");
+  const remoteFieldUpdatedAt = normalizeSettingsFieldUpdatedAt(remote, remote.updatedAt || "");
+  const keys = new Set([...settingsKeys(local), ...settingsKeys(remote)]);
+  const merged = { ...local } as Settings;
+  const fieldUpdatedAt: Record<string, string> = {};
+
+  keys.forEach((key) => {
+    const localClock = localFieldUpdatedAt[key] || "";
+    const remoteClock = remoteFieldUpdatedAt[key] || "";
+    if (nestedRecordSettingKeys.has(key)) {
+      const localRecord = settingRecord((local as unknown as Record<string, unknown>)[key]);
+      const remoteRecord = settingRecord((remote as unknown as Record<string, unknown>)[key]);
+      const childKeys = new Set([...Object.keys(localRecord), ...Object.keys(remoteRecord)]);
+      const mergedRecord: Record<string, unknown> = {};
+      childKeys.forEach((childKey) => {
+        const path = `${key}.${childKey}`;
+        const localChildClock = localFieldUpdatedAt[path] || localClock;
+        const remoteChildClock = remoteFieldUpdatedAt[path] || remoteClock;
+        const useRemoteChild = time(remoteChildClock) >= time(localChildClock);
+        const value = useRemoteChild ? remoteRecord[childKey] : localRecord[childKey];
+        if (value !== undefined) mergedRecord[childKey] = value;
+        fieldUpdatedAt[path] = useRemoteChild ? remoteChildClock : localChildClock;
+      });
+      (merged as unknown as Record<string, unknown>)[key] = mergedRecord;
+      fieldUpdatedAt[key] = time(remoteClock) >= time(localClock) ? remoteClock : localClock;
+      return;
+    }
+    if (key === "customNavPages") {
+      const pages = new Map<string, NonNullable<Settings["customNavPages"]>[number]>();
+      [...(local.customNavPages || []), ...(remote.customNavPages || [])].forEach((page) => {
+        const current = pages.get(page.id);
+        if (!current || time(page.deletedAt || page.updatedAt) >= time(current.deletedAt || current.updatedAt)) {
+          pages.set(page.id, page);
+        }
+      });
+      merged.customNavPages = [...pages.values()].sort((left, right) => left.order - right.order);
+      fieldUpdatedAt[key] = time(remoteClock) >= time(localClock) ? remoteClock : localClock;
+      return;
+    }
+    const useRemote = time(remoteClock) >= time(localClock);
+    (merged as Record<string, unknown>)[key] = useRemote
+      ? (remote as unknown as Record<string, unknown>)[key]
+      : (local as unknown as Record<string, unknown>)[key];
+    fieldUpdatedAt[key] = useRemote ? remoteClock : localClock;
+  });
+
+  return {
+    ...merged,
+    fieldUpdatedAt,
+    updatedAt: time(remote.updatedAt) >= time(local.updatedAt) ? remote.updatedAt : local.updatedAt
+  };
+};
 
 const schemaVersion = (state?: Partial<AppState>) => state?.dataSchemaVersion || state?.version || 1;
 
@@ -236,10 +350,6 @@ function ensureRemoteCompatible(remote: AppState) {
     throw new Error("当前版本过旧，请先升级 whytab 再同步");
   }
 }
-
-const newer = <T extends { updatedAt?: string }>(left: T, right: T) => {
-  return time(left.updatedAt) >= time(right.updatedAt) ? left : right;
-};
 
 const mergeRecords = <T extends SyncRecord>(local: T[], remote: T[]) => {
   const map = new Map<string, T>();
@@ -304,6 +414,43 @@ export function normalizeState(state: AppState): AppState {
       normalizedWidgets[key] = false;
     });
   }
+  const settings: Settings = {
+    ...state.settings,
+    wallpaper: visualVersion < 5 ? undefined : state.settings.wallpaper,
+    wallpaperPreset: visualVersion < 5 ? "aurora-lake" : state.settings.wallpaperPreset || "aurora-lake",
+    wallpaperRotation: visualVersion < 5 ? false : state.settings.wallpaperRotation ?? false,
+    visualRefreshVersion: 10,
+    iconSize: visualVersion < 8 && state.settings.iconSize === 64 ? 58 : state.settings.iconSize || 58,
+    glass: Math.min(state.settings.glass || 42, 46),
+    customWallpapers: state.settings.customWallpapers || [],
+    wallpaperCollection: state.settings.wallpaperCollection || ["coastal-glass", "neon-rain", "aurora-lake", "ocean-cliff"],
+    quickNote: state.settings.quickNote || "",
+    iconPresentation: state.settings.iconPresentation || "original",
+    widgets: normalizedWidgets,
+    widgetOrder: normalizeWidgetOrder(state.settings.widgetOrder),
+    widgetSizes: normalizedWidgetSizes,
+    customNavPages: (state.settings.customNavPages || []).filter((page, index, pages) => (
+      Boolean(page?.id && page.name?.trim() && page.groupId)
+      && pages.findIndex((candidate) => candidate.id === page.id) === index
+    )),
+    hiddenNavPages: Array.from(new Set((state.settings.hiddenNavPages || []).filter((page) => page === "shortcuts" || page === "tools"))),
+    navigationDisplay: state.settings.navigationDisplay === "auto" || state.settings.navigationDisplay === "hidden"
+      ? state.settings.navigationDisplay
+      : "always",
+    navigationSide: state.settings.navigationSide === "right" ? "right" : "left",
+    remoteIconLookup: state.settings.remoteIconLookup ?? true,
+    timeZone: state.settings.timeZone || "Asia/Shanghai",
+    dateTimeColor: state.settings.dateTimeColor || "#ffffff",
+    widgetAccentColor: state.settings.widgetAccentColor || "#2dd4bf",
+    weatherUseLocation: visualVersion < 7 ? true : state.settings.weatherUseLocation ?? true,
+    searchEngine: state.settings.searchEngine || "baidu",
+    calendarRecords: state.settings.calendarRecords || {},
+    supabaseUrl: state.settings.supabaseUrl || DEFAULT_SUPABASE_URL,
+    supabaseAnonKey: state.settings.supabaseAnonKey || DEFAULT_SUPABASE_ANON_KEY,
+    updatedAt: state.settings.updatedAt || updatedAt
+  };
+  settings.fieldUpdatedAt = normalizeSettingsFieldUpdatedAt(settings, settings.updatedAt || updatedAt);
+
   return {
     ...state,
     version: 1,
@@ -317,41 +464,7 @@ export function normalizeState(state: AppState): AppState {
     todos: state.todos || [],
     notes: state.notes || [],
     countdowns: state.countdowns || [],
-    settings: {
-      ...state.settings,
-      wallpaper: visualVersion < 5 ? undefined : state.settings.wallpaper,
-      wallpaperPreset: visualVersion < 5 ? "aurora-lake" : state.settings.wallpaperPreset || "aurora-lake",
-      wallpaperRotation: visualVersion < 5 ? false : state.settings.wallpaperRotation ?? false,
-      visualRefreshVersion: 10,
-      iconSize: visualVersion < 8 && state.settings.iconSize === 64 ? 58 : state.settings.iconSize || 58,
-      glass: Math.min(state.settings.glass || 42, 46),
-      customWallpapers: state.settings.customWallpapers || [],
-      wallpaperCollection: state.settings.wallpaperCollection || ["coastal-glass", "neon-rain", "aurora-lake", "ocean-cliff"],
-      quickNote: state.settings.quickNote || "",
-      iconPresentation: state.settings.iconPresentation || "original",
-      widgets: normalizedWidgets,
-      widgetOrder: normalizeWidgetOrder(state.settings.widgetOrder),
-      widgetSizes: normalizedWidgetSizes,
-      customNavPages: (state.settings.customNavPages || []).filter((page, index, pages) => (
-        Boolean(page?.id && page.name?.trim() && page.groupId)
-        && pages.findIndex((candidate) => candidate.id === page.id) === index
-      )),
-      hiddenNavPages: Array.from(new Set((state.settings.hiddenNavPages || []).filter((page) => page === "shortcuts" || page === "tools"))),
-      navigationDisplay: state.settings.navigationDisplay === "auto" || state.settings.navigationDisplay === "hidden"
-        ? state.settings.navigationDisplay
-        : "always",
-      navigationSide: state.settings.navigationSide === "right" ? "right" : "left",
-      remoteIconLookup: state.settings.remoteIconLookup ?? true,
-      timeZone: state.settings.timeZone || "Asia/Shanghai",
-      dateTimeColor: state.settings.dateTimeColor || "#ffffff",
-      widgetAccentColor: state.settings.widgetAccentColor || "#2dd4bf",
-      weatherUseLocation: visualVersion < 7 ? true : state.settings.weatherUseLocation ?? true,
-      searchEngine: state.settings.searchEngine || "baidu",
-      calendarRecords: state.settings.calendarRecords || {},
-      supabaseUrl: state.settings.supabaseUrl || DEFAULT_SUPABASE_URL,
-      supabaseAnonKey: state.settings.supabaseAnonKey || DEFAULT_SUPABASE_ANON_KEY,
-      updatedAt: state.settings.updatedAt || updatedAt
-    },
+    settings,
     sync: {
       deviceId: state.sync?.deviceId || crypto.randomUUID(),
       autoSync: state.sync?.autoSync ?? true,
@@ -370,7 +483,7 @@ export function mergeRemote(local: AppState, remote?: AppState): AppState {
 
   ensureRemoteCompatible(remote);
   const normalizedRemote = normalizeState(remote);
-  const settings = newer(normalizedLocal.settings, normalizedRemote.settings);
+  const settings = mergeSettings(normalizedLocal.settings, normalizedRemote.settings);
   const mergedFolders = preserveLocalIcons(
     mergeRecords<ShortcutFolder>(normalizedLocal.shortcutFolders, normalizedRemote.shortcutFolders),
     normalizedLocal.shortcutFolders

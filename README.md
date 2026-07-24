@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.5**. See the [bilingual release notes](docs/releases/0.5.5.md).
+Current release: **0.5.6**. See the [bilingual release notes](docs/releases/0.5.6.md).
 
 ## Product and Framework
 
@@ -54,7 +54,20 @@ Automatic Pages deployment requires repository secrets named `CLOUDFLARE_API_TOK
 
 The extension version replaces the browser's new tab page on desktop Chromium browsers.
 
-For security, this repository does not commit a prebuilt `extension/dist` folder with production sync configuration. To install from GitHub source:
+For everyday use, download the signed release artifact produced by GitHub Actions:
+
+1. Open [GitHub Releases](https://github.com/Muggler77/whytab/releases/latest).
+2. Download `whytab-<version>-chrome-web-store.zip`.
+3. Unzip the archive to a permanent local folder.
+4. Open `chrome://extensions/` in Chrome, or `edge://extensions/` in Edge.
+5. Enable Developer mode.
+6. Click "Load unpacked".
+7. Select the unzipped folder containing `manifest.json`.
+8. Open a new tab.
+
+Chrome does not automatically update unpacked extensions. When a new whytab release is available, download the new Release archive, replace the files in the same local folder, and click Reload on the browser's extension management page. whytab keeps user data in the browser profile, outside the release folder, and validates data compatibility before cloud sync.
+
+For development or self-hosting, build from source instead. The repository intentionally does not commit a production `extension/dist` folder:
 
 1. Download the repository ZIP from GitHub, or clone the repository.
 2. Open a terminal in the project folder.
@@ -65,11 +78,7 @@ npm install
 npm run build
 ```
 
-4. Open `chrome://extensions/` in Chrome, or `edge://extensions/` in Edge.
-5. Enable Developer mode.
-6. Click "Load unpacked".
-7. Select the generated `extension/dist` folder.
-8. Open a new tab.
+4. Load the generated `extension/dist` folder from the browser's extension management page.
 
 After installation, whytab stores your shortcuts, widgets, notes, todos, settings, and layout locally in the current browser profile.
 
@@ -95,11 +104,21 @@ https://whytab.pages.dev/
 
 - 手机和平板：打开上面的地址，添加到主屏幕即可使用。
 - Mac / Windows 桌面浏览器：可以直接打开在线版，也可以从源码构建后作为 Chrome / Edge 新标签页插件加载。
-- 插件安装方式：下载 GitHub 源码，运行 `npm install` 和 `npm run build`，然后在浏览器扩展管理页选择“加载已解压的扩展程序”，加载 `extension/dist`。
+- 插件安装方式：从 [GitHub Releases](https://github.com/Muggler77/whytab/releases/latest) 下载最新的 `whytab-<版本>-chrome-web-store.zip`，解压到固定目录，然后在浏览器扩展管理页选择“加载已解压的扩展程序”。
 - 不登录也可以用：数据默认保存在本机浏览器 IndexedDB。
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.6 多设备设置合并与账号删除
+
+- 设置改为按字段合并；小组件开关、组件尺寸和日历按内部条目合并，避免两台设备同时修改不同设置时互相覆盖。
+- 自定义导航页面删除使用同步删除标记，旧设备不会把已删除页面重新带回来。
+- 快捷地址只允许 HTTP/HTTPS；备份或历史云端数据中的脚本、文件和 data URL 不会被打开。
+- Chrome/Edge 新标签页搜索使用浏览器默认搜索引擎，符合 Chrome Web Store 搜索要求。
+- 图标候选源调整为公共图标缓存优先，并缩短失败超时；仍保留懒加载、文字占位和有界缓存。
+- 登录账号支持在再次验证邮箱和密码后永久删除账号、云端数据和当前设备上的账号数据。
+- 最低可同步版本提升为 0.5.6，旧版本只能在升级后继续云同步，防止旧合并算法覆盖新数据。
 
 ### 0.5.5 PWA 安装与隐私入口
 

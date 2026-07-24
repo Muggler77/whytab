@@ -56,6 +56,8 @@ auth.uid() = user_id
 
 That means one user cannot read or write another user's rows through the public client.
 
+Signed-in users can permanently delete their account from the account and sync panel after re-entering the current email address and password. The authenticated server function deletes the Supabase Auth user; database foreign keys cascade the deletion to cloud snapshots and legacy user-owned rows. The client then removes that account's local state and account-scoped restore points from the current device.
+
 ## Credentials and Keys
 
 The source code does not store private production secrets directly.
@@ -89,6 +91,8 @@ Never commit:
 - Complete local JSON export and restore for user-controlled backups
 - Account-scoped restore points and migration backups
 - Server-revision conflict detection for multi-device writes
+- Per-field setting clocks for concurrent settings, widget configuration, and calendar changes
+- Tombstones for custom navigation page deletion
 - Account-operation cancellation guards during login, logout, and sync
 - Client and server 2 MB cloud snapshot limits
 - Read-only snapshot table access with authenticated atomic writes
@@ -96,6 +100,7 @@ Never commit:
 - Bounded external icon caches and explicit local persistence errors
 - CSP, HSTS, frame blocking, and browser permission policy on the hosted app
 - No tracked personal migration data
+- Authenticated account deletion without exposing the server administration key
 
 ## Limitations
 

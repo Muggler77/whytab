@@ -10,6 +10,7 @@ const tempDir = await mkdtemp(join(tmpdir(), "whytab-migration-test-"));
 const migrationsOutput = join(tempDir, "migrations.mjs");
 const syncOutput = join(tempDir, "sync.mjs");
 const dbOutput = join(tempDir, "db.mjs");
+const urlsOutput = join(tempDir, "urls.mjs");
 
 globalThis.window = { crypto: globalThis.crypto };
 
@@ -47,10 +48,19 @@ try {
     },
     logLevel: "silent"
   });
+  await build({
+    entryPoints: [join(repoRoot, "extension/src/urls.ts")],
+    outfile: urlsOutput,
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    logLevel: "silent"
+  });
 
   const { createStateBackup, migrateState, stateSchemaVersion } = await import(pathToFileURL(migrationsOutput).href);
-  const { markPulled, mergeRemote, normalizeState, prepareCloudState } = await import(pathToFileURL(syncOutput).href);
+  const { markPulled, mergeRemote, normalizeState, prepareCloudState, stampSettingsChanges } = await import(pathToFileURL(syncOutput).href);
   const { accountScopedKey } = await import(pathToFileURL(dbOutput).href);
+  const { normalizeHttpUrl, safeHttpHref } = await import(pathToFileURL(urlsOutput).href);
   const now = new Date("2026-07-15T00:00:00.000Z").toISOString();
   const legacyState = {
     version: 1,
@@ -92,7 +102,7 @@ try {
   assert.notEqual(accountScopedKey("sync-restore-point", "user-1"), accountScopedKey("sync-restore-point", "user-2"), "restore points must be account scoped");
   assert.notEqual(accountScopedKey("migration-backup", "user-1"), accountScopedKey("migration-backup"), "signed-in and anonymous backups must not share a key");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.5" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.6" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -204,6 +214,63 @@ try {
   );
   assert.equal(concurrentMerge.sync.remoteRevision, 11, "concurrent merge must retain the newest server revision");
 
+  const settingsBase = normalizeState({
+    ...legacyState,
+    settings: {
+      ...legacyState.settings,
+      city: "Shanghai",
+      widgets: { ...legacyState.settings.widgets, weather: true, notes: true },
+      calendarRecords: { "2026-07-24": "基础日程" },
+      customNavPages: [{ id: "page-1", name: "工作", groupId: "default", icon: "briefcase", order: 0, updatedAt: now }],
+      updatedAt: now
+    }
+  });
+  const settingsDeviceA = {
+    ...settingsBase,
+    settings: stampSettingsChanges(settingsBase.settings, {
+      ...settingsBase.settings,
+      theme: "light",
+      widgets: { ...settingsBase.settings.widgets, weather: false }
+    }, "2026-07-24T01:00:00.000Z"),
+    updatedAt: "2026-07-24T01:00:00.000Z"
+  };
+  const settingsDeviceB = {
+    ...settingsBase,
+    settings: stampSettingsChanges(settingsBase.settings, {
+      ...settingsBase.settings,
+      city: "Tokyo",
+      widgets: { ...settingsBase.settings.widgets, notes: false },
+      calendarRecords: { ...settingsBase.settings.calendarRecords, "2026-07-25": "设备 B 日程" }
+    }, "2026-07-24T02:00:00.000Z"),
+    updatedAt: "2026-07-24T02:00:00.000Z"
+  };
+  const concurrentSettingsMerge = mergeRemote(settingsDeviceA, settingsDeviceB);
+  assert.equal(concurrentSettingsMerge.settings.theme, "light", "different concurrent setting fields must both survive");
+  assert.equal(concurrentSettingsMerge.settings.city, "Tokyo", "newer unrelated setting fields must survive");
+  assert.equal(concurrentSettingsMerge.settings.widgets.weather, false, "nested widget changes from device A must survive");
+  assert.equal(concurrentSettingsMerge.settings.widgets.notes, false, "nested widget changes from device B must survive");
+  assert.equal(concurrentSettingsMerge.settings.calendarRecords["2026-07-25"], "设备 B 日程", "nested calendar records must merge by date");
+
+  const deletedPageState = {
+    ...settingsBase,
+    settings: stampSettingsChanges(settingsBase.settings, {
+      ...settingsBase.settings,
+      customNavPages: settingsBase.settings.customNavPages.map((page) => ({
+        ...page,
+        deletedAt: "2026-07-24T03:00:00.000Z",
+        updatedAt: "2026-07-24T03:00:00.000Z"
+      }))
+    }, "2026-07-24T03:00:00.000Z"),
+    updatedAt: "2026-07-24T03:00:00.000Z"
+  };
+  const pageDeletionMerge = mergeRemote(settingsBase, deletedPageState);
+  assert.equal(pageDeletionMerge.settings.customNavPages[0].deletedAt, "2026-07-24T03:00:00.000Z", "deleted custom pages must not be resurrected by another device");
+
+  assert.equal(normalizeHttpUrl("example.com"), "https://example.com/", "hostnames should normalize to HTTPS");
+  assert.equal(normalizeHttpUrl("javascript:alert(1)"), undefined, "script URLs must be rejected");
+  assert.equal(normalizeHttpUrl("data:text/html,test"), undefined, "data URLs must be rejected for shortcuts");
+  assert.equal(safeHttpHref("file:///tmp/private"), "about:blank", "unsupported shortcut protocols must open a safe blank page");
+
   const hardeningMigration = await readFile(join(repoRoot, "supabase/migrations/0006_harden_sync_boundaries.sql"), "utf8");
   assert.match(hardeningMigration, /p_name is distinct from 'primary'/, "sync RPC must reject unbounded snapshot names");
   assert.match(hardeningMigration, /current_user_id uuid := auth\.uid\(\)/, "sync RPC must bind writes to the authenticated user");
@@ -211,9 +278,16 @@ try {
   assert.match(hardeningMigration, /2097152/, "sync RPC must enforce a payload size limit");
   assert.match(hardeningMigration, /revoke all[\s\S]*public\.shortcut_groups/, "legacy direct access must remain disabled");
 
+  const deleteAccountFunction = await readFile(join(repoRoot, "supabase/functions/delete-account/index.ts"), "utf8");
+  assert.match(deleteAccountFunction, /req\.headers\.get\("authorization"\)/, "account deletion must require the caller's bearer token");
+  assert.match(deleteAccountFunction, /auth\.getUser\(\)/, "account deletion must resolve the authenticated user on the server");
+  assert.match(deleteAccountFunction, /auth\.admin\.deleteUser\(userData\.user\.id\)/, "account deletion must only delete the authenticated user");
+  assert.doesNotMatch(deleteAccountFunction, /serviceRoleKey[^]*Response\.json/, "the service role key must never be returned to the client");
+
   const extensionManifest = JSON.parse(await readFile(join(repoRoot, "extension/public/manifest.json"), "utf8"));
   assert.equal(extensionManifest.permissions.includes("storage"), false, "unused extension storage permission must not be requested");
   assert.equal(extensionManifest.permissions.includes("alarms"), false, "unused extension alarms permission must not be requested");
+  assert.equal(extensionManifest.permissions.includes("search"), true, "new-tab web search must use the browser default provider through the Search API");
   const webManifest = JSON.parse(await readFile(join(repoRoot, "extension/public/app.webmanifest"), "utf8"));
   assert.equal(webManifest.icons.some((icon) => icon.sizes === "192x192"), true, "PWA must provide a 192px install icon");
   assert.equal(webManifest.icons.some((icon) => icon.sizes === "512x512"), true, "PWA must provide a 512px install icon");

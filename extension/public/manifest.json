@@ -2,12 +2,13 @@
   "manifest_version": 3,
   "name": "whytab",
   "description": "A local-first new tab dashboard for shortcuts, widgets, notes, todos, weather, and optional sync.",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "chrome_url_overrides": {
     "newtab": "index.html"
   },
   "permissions": [
-    "geolocation"
+    "geolocation",
+    "search"
   ],
   "host_permissions": [
     "https://api.open-meteo.com/*",

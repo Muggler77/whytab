@@ -1,7 +1,7 @@
-export const APP_VERSION = "0.5.5";
+export const APP_VERSION = "0.5.6";
 export const DATA_SCHEMA_VERSION = 1;
 export const MIN_SUPPORTED_DATA_SCHEMA_VERSION = 1;
-export const MIN_SUPPORTED_APP_VERSION = "0.5.2";
+export const MIN_SUPPORTED_APP_VERSION = "0.5.6";
 
 export const UPDATE_CHECK_URL = "https://whytab.pages.dev/latest-version.json";
 export const UPDATE_TARGET_URL = "https://github.com/Muggler77/whytab";

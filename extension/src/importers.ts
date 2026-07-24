@@ -1,12 +1,8 @@
 import type { ImportShortcut, Shortcut, ShortcutFolder, ShortcutGroup } from "./types";
 import { nowIso, uid } from "./defaultState";
+import { normalizeHttpUrl } from "./urls";
 
-const cleanUrl = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-};
+const cleanUrl = (value: string) => normalizeHttpUrl(value) || "";
 
 const isLikelyUrl = (value: string) => /^https?:\/\//i.test(value) || /^[\w.-]+\.[a-z]{2,}/i.test(value);
 

@@ -53,6 +53,17 @@ export async function writeKey<T>(key: string, value: T): Promise<void> {
   });
 }
 
+export async function deleteKey(key: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
+  });
+}
+
 async function migrateStoredState(stored: AppState | undefined, save: (state: AppState) => Promise<void>, userId?: string): Promise<AppState> {
   const migration = migrateState(stored, userId);
   if (migration.backup) await writeKey(accountScopedKey(MIGRATION_BACKUP_KEY, userId), migration.backup);
@@ -81,6 +92,10 @@ export async function loadStateForAccount(userId?: string): Promise<{ state: App
 
 export async function saveStateForAccount(state: AppState, userId?: string): Promise<void> {
   await writeKey(accountStateKey(userId), state);
+}
+
+export async function deleteStateForAccount(userId: string): Promise<void> {
+  await deleteKey(accountStateKey(userId));
 }
 
 export async function cacheWeather<T>(value: T): Promise<void> {
