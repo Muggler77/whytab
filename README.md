@@ -4,7 +4,7 @@ whytab is a local-first new tab dashboard for shortcuts, widgets, notes, todos, 
 
 It is built as a Chrome / Edge Manifest V3 extension and as a responsive web app for mobile and tablet use. The core idea is simple: user data should work locally first, remain exportable, and only sync to the cloud after the user signs in.
 
-Current release: **0.5.4**. See the [bilingual release notes](docs/releases/0.5.4.md).
+Current release: **0.5.5**. See the [bilingual release notes](docs/releases/0.5.5.md).
 
 ## Product and Framework
 
@@ -100,6 +100,14 @@ https://whytab.pages.dev/
 - 需要多设备同步时：在账号面板注册或登录，同一个账号即可同步数据。
 - 未登录时已经整理好的快捷方式、笔记、待办和设置，登录后会自动带入当前账号，不会直接消失。
 - 普通用户只需要邮箱和密码，不需要自己准备服务器、服务地址、API Key、访问密钥或任何高级连接配置。
+
+### 0.5.5 PWA 安装与隐私入口
+
+- 增加 192px、512px 和 maskable PWA 图标，完善 Android、Windows 和桌面 Chromium 的安装体验。
+- Apple 主屏幕图标升级为 192px，移动端显示更清晰。
+- 网页启动后请求浏览器持久化本地存储，降低系统空间回收导致本机数据被清理的概率。
+- 登录注册面板增加公开隐私与数据说明入口。
+- 删除扩展清单中未使用的 `storage` 和 `alarms` 权限，只保留当前功能实际需要的权限。
 
 ### 0.5.4 账号与同步安全加固
 

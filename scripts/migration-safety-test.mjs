@@ -92,7 +92,7 @@ try {
   assert.notEqual(accountScopedKey("sync-restore-point", "user-1"), accountScopedKey("sync-restore-point", "user-2"), "restore points must be account scoped");
   assert.notEqual(accountScopedKey("migration-backup", "user-1"), accountScopedKey("migration-backup"), "signed-in and anonymous backups must not share a key");
 
-  const current = migrateState({ ...migrated.state, clientVersion: "0.5.4" });
+  const current = migrateState({ ...migrated.state, clientVersion: "0.5.5" });
   assert.equal(current.migrated, false, "current state should not create another migration");
 
   const invalid = migrateState({ bad: true });
@@ -210,6 +210,13 @@ try {
   assert.match(hardeningMigration, /revision = p_expected_revision/, "sync RPC must use optimistic revision checks");
   assert.match(hardeningMigration, /2097152/, "sync RPC must enforce a payload size limit");
   assert.match(hardeningMigration, /revoke all[\s\S]*public\.shortcut_groups/, "legacy direct access must remain disabled");
+
+  const extensionManifest = JSON.parse(await readFile(join(repoRoot, "extension/public/manifest.json"), "utf8"));
+  assert.equal(extensionManifest.permissions.includes("storage"), false, "unused extension storage permission must not be requested");
+  assert.equal(extensionManifest.permissions.includes("alarms"), false, "unused extension alarms permission must not be requested");
+  const webManifest = JSON.parse(await readFile(join(repoRoot, "extension/public/app.webmanifest"), "utf8"));
+  assert.equal(webManifest.icons.some((icon) => icon.sizes === "192x192"), true, "PWA must provide a 192px install icon");
+  assert.equal(webManifest.icons.some((icon) => icon.sizes === "512x512"), true, "PWA must provide a 512px install icon");
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

@@ -46,3 +46,9 @@ if (canUseWebAppCache && "serviceWorker" in navigator) {
       .catch(() => undefined);
   });
 }
+
+if (canUseWebAppCache && navigator.storage?.persist) {
+  window.addEventListener("load", () => {
+    void navigator.storage.persist().catch(() => false);
+  });
+}

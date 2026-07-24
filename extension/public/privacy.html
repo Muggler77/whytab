@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0c111d" />
+    <title>whytab 隐私与数据说明</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #e8eef7;
+        background: #0c111d;
+      }
+      body {
+        margin: 0;
+        background: #0c111d;
+      }
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 30px;
+        letter-spacing: 0;
+      }
+      h2 {
+        margin: 30px 0 10px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+      p, li {
+        color: #b9c6d8;
+        font-size: 15px;
+        line-height: 1.75;
+      }
+      a {
+        color: #67e8f9;
+      }
+      .meta {
+        color: #7f8da3;
+        font-size: 13px;
+      }
+      .notice {
+        padding: 14px 16px;
+        background: #131c2b;
+        border: 1px solid #26354a;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>whytab 隐私与数据说明</h1>
+      <p class="meta">更新日期：2026 年 7 月 24 日</p>
+      <p class="notice">whytab 采用本地优先设计。你无需登录即可使用，登录仅用于可选的跨设备同步。</p>
+
+      <h2>本机数据</h2>
+      <p>快捷方式、小组件、便签、待办、倒计时、日历、布局和设置默认保存在当前浏览器的 IndexedDB 中。清理浏览器网站数据、卸载扩展、删除浏览器配置文件或系统回收存储空间，都可能影响仅存在本机的数据。请定期使用完整 JSON 备份。</p>
+
+      <h2>账号与云同步</h2>
+      <p>当你注册或登录时，Supabase Auth 会处理邮箱、密码凭据和登录会话。可同步的 whytab 数据会写入与账号 ID 绑定的云端快照，并通过 Row Level Security 和带修订号的原子写入限制账号边界。密码不会由 whytab 前端读取或保存为明文。</p>
+
+      <h2>不会同步的内容</h2>
+      <p>本机上传的照片、照片文件名、自定义壁纸、快捷图标和文件夹图标不会进入云端快照。同步数据不是端到端加密；云服务运营方在必要的系统管理场景下可能具备技术访问能力，因此不要在便签或标题中保存密码、恢复码或其他高度敏感秘密。</p>
+
+      <h2>外部服务</h2>
+      <ul>
+        <li>Supabase：账号、认证邮件、会话和可选云同步。</li>
+        <li>Open-Meteo：天气和地理编码请求。</li>
+        <li>Simple Icons、DuckDuckGo 和 Google：开启自动图标查找时获取网站图标。</li>
+        <li>Cloudflare Pages：托管 whytab 网页版本并提供 HTTPS 与安全响应头。</li>
+      </ul>
+
+      <h2>你的选择</h2>
+      <p>你可以不登录、关闭自动同步、关闭第三方图标查找、导出完整备份并在其他浏览器恢复。退出登录只退出当前设备，并切换到未登录空白数据；其他设备的登录状态不受影响。</p>
+
+      <h2>开源与支持</h2>
+      <p>源代码、数据模型和安全说明位于 <a href="https://github.com/Muggler77/whytab" rel="noreferrer">GitHub 仓库</a>。问题与数据请求可通过仓库的 <a href="https://github.com/Muggler77/whytab/issues" rel="noreferrer">Issues</a> 提交。</p>
+
+      <p><a href="./">返回 whytab</a></p>
+    </main>
+  </body>
+</html>

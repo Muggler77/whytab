@@ -4603,6 +4603,11 @@ function SyncDialog({ state, sync, updateState, onClose, onLogin, onSignOut, onR
               ? "使用同一个账号登录其他设备，即可合并同步你的 whytab 数据。未登录时在本机整理的内容也会自动带入当前账号。"
               : "注册密码至少 10 个字符。验证邮箱后，即可在其他设备登录并同步。"}
           </p>
+          <p className="sync-legal-note">
+            继续即表示你已阅读
+            <a href="./privacy.html" target="_blank" rel="noreferrer">隐私与数据说明</a>
+            。本机数据默认保存在当前浏览器，登录后才会同步可同步字段。
+          </p>
           {notice && <p className="sync-auth-success">{notice}</p>}
           {error && <p className="warning">{error}</p>}
           <button className="primary sync-submit" disabled={busy || !email || !password} onClick={() => submit(authMode)}>
